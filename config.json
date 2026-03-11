@@ -1,0 +1,20 @@
+{
+  "port": 3080,
+  "host": "127.0.0.1",
+  "authToken": "ai-review-hub-dev-token",
+  "promptDir": "C:/tmp/prompts",
+  "allowedWorkdirs": [
+    "C:/Users/Administrator/Desktop/v2-admin",
+    "C:/Users/Administrator/Desktop"
+  ],
+  "cliConcurrency": {
+    "codex": 1,
+    "claude": 3,
+    "gemini": 2,
+    "_default": 1
+  },
+  "defaults": {
+    "timeout": 300,
+    "silentTimeout": 120
+  }
+}
