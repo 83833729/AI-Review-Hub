@@ -79,6 +79,8 @@ function createRouter(store, runner, io) {
       status: task.status,
       elapsed,
       outputLines: task.output_lines,
+      workdir: task.workdir || '-',
+      options: task.options || {},
       createdAt: task.created_at,
       startedAt: task.started_at,
       completedAt: task.completed_at,
@@ -134,18 +136,30 @@ function createRouter(store, runner, io) {
 
   // ============ Antigravity 兼容层（GET 提交） ============
 
-  /** GET /compat/submit - 通过 GET 提交任务（Antigravity read_url_content 专用） */
+  /** GET /compat/submit - 通过 GET 提交任务（支持内联 prompt 或文件引用） */
   router.get('/compat/submit', (req, res) => {
     try {
-      const { taskId, cli, promptFile, workdir, sandbox, timeout } = req.query;
+      const { taskId, cli, prompt, promptFile, workdir, sandbox, timeout } = req.query;
 
       if (!taskId) return res.status(400).json({ error: '缺少 taskId' });
 
       const cliCheck = validateCli(cli);
       if (!cliCheck.valid) return res.status(400).json({ error: cliCheck.reason });
 
-      const pathCheck = validatePromptPath(promptFile);
-      if (!pathCheck.valid) return res.status(400).json({ error: pathCheck.reason });
+      // 处理 prompt：内联文本优先，其次文件引用
+      let promptPath;
+      if (prompt) {
+        const promptDir = path.resolve(require('../config.json').promptDir);
+        if (!fs.existsSync(promptDir)) fs.mkdirSync(promptDir, { recursive: true });
+        promptPath = path.join(promptDir, `${taskId}.txt`);
+        fs.writeFileSync(promptPath, prompt, 'utf-8');
+      } else if (promptFile) {
+        const pathCheck = validatePromptPath(promptFile);
+        if (!pathCheck.valid) return res.status(400).json({ error: pathCheck.reason });
+        promptPath = path.resolve(promptFile);
+      } else {
+        return res.status(400).json({ error: '需要 prompt 或 promptFile' });
+      }
 
       if (workdir) {
         const wdCheck = validateWorkdir(workdir);
@@ -159,7 +173,7 @@ function createRouter(store, runner, io) {
       const task = store.create({
         id: taskId,
         cli,
-        promptPath: path.resolve(promptFile),
+        promptPath,
         workdir: workdir || undefined,
         options: Object.keys(options).length > 0 ? options : undefined,
       });

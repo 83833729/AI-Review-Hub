@@ -14,7 +14,7 @@
     "_default": 1
   },
   "defaults": {
-    "timeout": 300,
+    "timeout": 600,
     "silentTimeout": 120
   }
 }

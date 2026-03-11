@@ -3,10 +3,12 @@ const fs = require('fs');
 const path = require('path');
 const { killProcessTree } = require('./utils/processTree');
 const CodexAdapter = require('./adapters/codex');
+const GeminiAdapter = require('./adapters/gemini');
 
 /** 适配器注册表 */
 const ADAPTERS = {
   codex: new CodexAdapter(),
+  gemini: new GeminiAdapter(),
 };
 
 /**
@@ -29,7 +31,7 @@ class Runner {
     this.onOutput = options.onOutput || (() => {});
     this.onStatusChange = options.onStatusChange || (() => {});
 
-    /** @type {Map<string, { process: import('child_process').ChildProcess, timer: NodeJS.Timeout, silentTimer: NodeJS.Timeout, completionTimer: NodeJS.Timeout|null, finished: boolean }>} */
+    /** @type {Map<string, { process: import('child_process').ChildProcess, timer: NodeJS.Timeout, silentTimer: NodeJS.Timeout, finished: boolean }>} */
     this.running = new Map();
   }
 
@@ -58,12 +60,9 @@ class Runner {
     const runsDir = path.join(__dirname, '..', 'runs', taskId);
     if (!fs.existsSync(runsDir)) fs.mkdirSync(runsDir, { recursive: true });
 
-    const resultPath = path.join(runsDir, 'result.txt');
-
     const { cmd, args } = adapter.buildCommand({
       promptPath: task.prompt_path,
       workdir: task.workdir,
-      resultPath,
       options: task.options,
     });
 
@@ -108,9 +107,6 @@ class Runner {
 
     let outputLines = 0;
 
-    /** 结果文件就绪后的短倒计时（秒） */
-    const COMPLETION_GRACE = 10;
-
     // 捕获 stdout
     proc.stdout.on('data', (chunk) => {
       const text = chunk.toString('utf-8');
@@ -122,15 +118,16 @@ class Runner {
       this.onOutput(taskId, text);
       this._resetSilentTimer(taskId);
 
-      // 结果文件已写入 → 启动短倒计时自动完成
-      const entry = this.running.get(taskId);
-      if (entry && !entry.completionTimer && adapter.outputMode === 'resultFile' && fs.existsSync(resultPath)) {
-        const size = fs.statSync(resultPath).size;
-        if (size > 0) {
-          console.log(`[Runner] ${taskId} 结果文件已就绪 (${size} bytes)，${COMPLETION_GRACE}s 后自动完成`);
-          entry.completionTimer = setTimeout(() => {
-            this._completeByResultFile(taskId, resultPath, stdoutLog, stderrLog);
-          }, COMPLETION_GRACE * 1000);
+      // 适配器流完成检测：逐行扫描
+      const lines = text.split('\n');
+      for (const line of lines) {
+        if (line.trim() && adapter.isStreamComplete(line)) {
+          console.log(`[Runner] ${taskId} 流完成信号检测到，主动结束`);
+          handleFinish(0, null);
+          // 异步终止进程（结果已捕获完毕）
+          const pid = proc.pid;
+          if (pid) killProcessTree(pid).catch(() => {});
+          return;
         }
       }
     });
@@ -174,14 +171,10 @@ class Runner {
         return;
       }
 
-      // 读结果文件
-      let resultFilePath = null;
-      if (adapter.outputMode === 'resultFile' && fs.existsSync(resultPath)) {
-        resultFilePath = resultPath;
-      }
-
-      if (code === 0) {
-        this.store.updateStatus(taskId, 'completed', { exitCode: code, resultPath: resultFilePath });
+      // 使用适配器的完成判定逻辑
+      const isCompleted = adapter.detectCompletion(code);
+      if (isCompleted) {
+        this.store.updateStatus(taskId, 'completed', { exitCode: code });
         this.onStatusChange(taskId, 'completed');
       } else {
         const stderrContent = fs.existsSync(path.join(runsDir, 'stderr.log'))
@@ -203,44 +196,21 @@ class Runner {
       handleFinish(null, `进程错误: ${err.message}`);
     });
 
-    // 设定超时 → 标记 timeout 状态后再 kill
+    // 设定总超时
     const timeout = (task.options?.timeout || this.defaultTimeout) * 1000;
     const timer = setTimeout(() => {
       console.log(`[Runner] 任务 ${taskId} 总超时 (${timeout / 1000}s)`);
       this._timeoutTask(taskId, `总超时 ${timeout / 1000}s`);
     }, timeout);
 
-    // 静默超时
+    // 静默超时（适配器可覆盖全局值）
+    const effectiveSilent = adapter.silentTimeoutOverride ?? this.silentTimeout;
     const silentTimer = setTimeout(() => {
-      console.log(`[Runner] 任务 ${taskId} 静默超时 (${this.silentTimeout}s)`);
-      this._timeoutTask(taskId, `静默超时 ${this.silentTimeout}s`);
-    }, this.silentTimeout * 1000);
+      console.log(`[Runner] 任务 ${taskId} 静默超时 (${effectiveSilent}s)`);
+      this._timeoutTask(taskId, `静默超时 ${effectiveSilent}s`);
+    }, effectiveSilent * 1000);
 
-    this.running.set(taskId, { process: proc, timer, silentTimer, completionTimer: null, finished: false });
-  }
-
-  /**
-   * 结果文件就绪后自动完成（不等进程退出）
-   * @private
-   */
-  _completeByResultFile(taskId, resultPath, stdoutLog, stderrLog) {
-    const entry = this.running.get(taskId);
-    if (!entry || entry.finished) return;
-    entry.finished = true;
-
-    console.log(`[Runner] ${taskId} 结果文件就绪，标记完成并终止进程`);
-    stdoutLog.end();
-    stderrLog.end();
-    this._clearAllTimers(taskId);
-    this.store.updateStatus(taskId, 'completed', { exitCode: 0, resultPath });
-    this.onStatusChange(taskId, 'completed');
-
-    // 异步终止残留进程（finished 已为 true，所以用 _forceKill 绕过 finished 检查）
-    const pid = entry.process?.pid;
-    this.running.delete(taskId);
-    if (pid) {
-      killProcessTree(pid).catch(e => console.error(`[Runner] 清理残留进程失败:`, e.message));
-    }
+    this.running.set(taskId, { process: proc, timer, silentTimer, finished: false, adapter });
   }
 
   /**
@@ -265,10 +235,11 @@ class Runner {
     const entry = this.running.get(taskId);
     if (!entry || entry.finished) return;
     clearTimeout(entry.silentTimer);
+    const effectiveSilent = entry.adapter?.silentTimeoutOverride ?? this.silentTimeout;
     entry.silentTimer = setTimeout(() => {
       console.log(`[Runner] 任务 ${taskId} 静默超时`);
-      this._timeoutTask(taskId, `静默超时 ${this.silentTimeout}s`);
-    }, this.silentTimeout * 1000);
+      this._timeoutTask(taskId, `静默超时 ${effectiveSilent}s`);
+    }, effectiveSilent * 1000);
   }
 
   /** 终止任务（仅未完成的） */
@@ -288,13 +259,12 @@ class Runner {
     }
   }
 
-  /** 清除所有定时器（含 completionTimer） */
+  /** 清除所有定时器 */
   _clearAllTimers(taskId) {
     const entry = this.running.get(taskId);
     if (!entry) return;
     clearTimeout(entry.timer);
     clearTimeout(entry.silentTimer);
-    if (entry.completionTimer) clearTimeout(entry.completionTimer);
   }
 
   /**
