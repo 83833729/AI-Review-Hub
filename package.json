@@ -9,11 +9,12 @@
     "mcp": "node mcp-server.js"
   },
   "dependencies": {
-    "express": "^4.21.0",
+    "@agentclientprotocol/sdk": "^0.16.1",
+    "@modelcontextprotocol/sdk": "^1.12.1",
     "better-sqlite3": "^11.0.0",
+    "express": "^4.21.0",
     "socket.io": "^4.7.0",
     "tree-kill": "^1.2.2",
-    "@modelcontextprotocol/sdk": "^1.12.1",
     "zod": "^3.24.0"
   }
 }

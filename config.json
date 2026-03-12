@@ -7,14 +7,22 @@
     "C:/Users/Administrator/Desktop/v2-admin",
     "C:/Users/Administrator/Desktop"
   ],
-  "cliConcurrency": {
-    "codex": 1,
-    "claude": 3,
-    "gemini": 2,
-    "_default": 1
+  "supportedClis": ["codex", "gemini", "claude"],
+  "preferredModel": {
+    "gemini": "gemini-3-flash-preview"
   },
   "defaults": {
     "timeout": 600,
-    "silentTimeout": 120
+    "silentTimeout": 120,
+    "cliTimeout": {
+      "codex": 300,
+      "gemini": 600,
+      "claude": 300
+    }
+  },
+  "sessions": {
+    "idleTimeout": 1800,
+    "promptTimeout": 600,
+    "maxSessions": 5
   }
 }

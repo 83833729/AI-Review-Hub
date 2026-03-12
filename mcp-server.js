@@ -45,15 +45,17 @@ server.tool(
   'submit_review',
   '提交一个 AI 代码审查任务。支持直接传入 prompt 文本，无需写文件。',
   {
-    taskId: z.string().describe('任务唯一 ID'),
+    taskId: z.string().optional().describe('任务名称/标签（可选，服务端自动生成 UUID 作为真正 ID）'),
     cli: z.enum(['codex', 'claude', 'gemini']).describe('AI CLI 工具名'),
     prompt: z.string().describe('审查指令文本'),
     workdir: z.string().optional().describe('代码工作目录的绝对路径'),
-    sandbox: z.enum(['workspace-write', 'danger-full-access']).default('workspace-write').describe('沙箱模式：workspace-write（默认）/ danger-full-access'),
+    sandbox: z.enum(['read-only', 'workspace-write', 'danger-full-access']).default('workspace-write').describe('沙箱模式：read-only / workspace-write（默认）/ danger-full-access'),
     timeout: z.number().optional().describe('超时秒数，默认 300'),
   },
   async ({ taskId, cli, prompt, workdir, sandbox, timeout }) => {
-    const body = { taskId, cli, prompt };
+    const body = { cli, prompt };
+    // 兼容: taskId 作为 name
+    if (taskId) body.name = taskId;
     if (workdir) body.workdir = workdir;
     const options = {};
     if (sandbox) options.sandbox = sandbox;
@@ -111,6 +113,77 @@ server.tool(
   },
   async ({ taskId }) => {
     const data = await hubRequest(`/tasks/${encodeURIComponent(taskId)}/cancel`, 'POST');
+    return textResult(data);
+  }
+);
+
+// ============ 多轮对话 Session 工具 ============
+
+// ---- create_session：创建会话 ----
+server.tool(
+  'create_session',
+  '创建一个多轮对话会话。会话创建后可多次发送消息，支持追问和上下文保持。',
+  {
+    cli: z.enum(['codex', 'gemini', 'claude']).describe('AI CLI 工具名（仅支持 codex/gemini/claude）'),
+    workdir: z.string().optional().describe('代码工作目录的绝对路径'),
+    name: z.string().optional().describe('会话名称/标签（可选）'),
+  },
+  async ({ cli, workdir, name }) => {
+    const body = { cli };
+    if (workdir) body.workdir = workdir;
+    if (name) body.name = name;
+    const data = await hubRequest('/sessions', 'POST', body);
+    return textResult(data);
+  }
+);
+
+// ---- send_message：在会话中发送消息 ----
+server.tool(
+  'send_message',
+  '在已有会话中发送消息或追问。会话会保持上下文，适合多轮对话场景。',
+  {
+    sessionId: z.string().describe('会话 ID'),
+    message: z.string().describe('消息内容'),
+  },
+  async ({ sessionId, message }) => {
+    const data = await hubRequest(`/sessions/${encodeURIComponent(sessionId)}/messages`, 'POST', { message });
+    return textResult(data);
+  }
+);
+
+// ---- get_session：获取会话详情 ----
+server.tool(
+  'get_session',
+  '获取会话详情和完整对话历史。',
+  {
+    sessionId: z.string().describe('会话 ID'),
+  },
+  async ({ sessionId }) => {
+    const data = await hubRequest(`/sessions/${encodeURIComponent(sessionId)}`);
+    return textResult(data);
+  }
+);
+
+// ---- close_session：关闭会话 ----
+server.tool(
+  'close_session',
+  '关闭一个会话，释放资源。',
+  {
+    sessionId: z.string().describe('会话 ID'),
+  },
+  async ({ sessionId }) => {
+    const data = await hubRequest(`/sessions/${encodeURIComponent(sessionId)}/close`, 'POST');
+    return textResult(data);
+  }
+);
+
+// ---- list_sessions：列出所有会话 ----
+server.tool(
+  'list_sessions',
+  '列出所有会话（最近 100 条）。',
+  {},
+  async () => {
+    const data = await hubRequest('/sessions');
     return textResult(data);
   }
 );

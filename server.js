@@ -4,8 +4,7 @@ const { Server: SocketIO } = require('socket.io');
 const path = require('path');
 const config = require('./config.json');
 const TaskStore = require('./src/taskStore');
-const Runner = require('./src/runner');
-const Scheduler = require('./src/scheduler');
+const SessionManager = require('./src/sessionManager');
 const createRouter = require('./src/api');
 
 // ============ 初始化 ============
@@ -16,23 +15,23 @@ const io = new SocketIO(httpServer, { cors: { origin: '*' } });
 const dbPath = path.join(__dirname, 'hub.db');
 const store = new TaskStore(dbPath);
 
-// 服务重启 → 中断任务标记为失败
+// 服务重启 → 中断的任务和会话标记为失败/错误
 store.markInterrupted();
+store.markSessionsInterrupted();
 
-const runner = new Runner(store, {
-  defaultTimeout: config.defaults.timeout,
-  silentTimeout: config.defaults.silentTimeout,
-  onOutput: (taskId, line) => {
-    io.emit('task:output', { taskId, data: line });
+const sessionConfig = config.sessions || {};
+const sessionManager = new SessionManager(store, {
+  idleTimeout: sessionConfig.idleTimeout || 1800,
+  promptTimeout: sessionConfig.promptTimeout || 600,
+  maxSessions: sessionConfig.maxSessions || 5,
+  onMessage: (sessionId, role, content) => {
+    io.emit('session:message', { sessionId, role, content });
   },
-  onStatusChange: (taskId, status) => {
-    console.log(`[Task] ${taskId} → ${status}`);
-    const task = store.get(taskId);
-    io.emit('task:status', { taskId, status, task });
+  onStatusChange: (sessionId, status) => {
+    console.log(`[Session] ${sessionId} → ${status}`);
+    io.emit('session:status', { sessionId, status });
   },
 });
-
-const scheduler = new Scheduler(store, runner);
 
 // ============ 中间件 ============
 
@@ -48,7 +47,7 @@ app.use((req, res, next) => {
 });
 
 /** API 路由 */
-app.use('/', createRouter(store, runner, io));
+app.use('/', createRouter(store, sessionManager, io));
 
 /** WebSocket 连接 */
 io.on('connection', (socket) => {
@@ -62,31 +61,35 @@ io.on('connection', (socket) => {
 const server = httpServer.listen(config.port, config.host, () => {
   console.log(`
 ╔══════════════════════════════════════════╗
-║         AI Review Hub v1.0.0             ║
+║         AI Review Hub v2.0.0             ║
 ║  http://${config.host}:${config.port}                ║
 ║                                          ║
-║  API:  /tasks, /compat/submit            ║
-║  UI:   http://${config.host}:${config.port}          ║
+║  通信协议: ACP (统一)                    ║
+║  支持 CLI: codex / gemini / claude       ║
 ╚══════════════════════════════════════════╝
   `);
-  scheduler.start();
+
+  // 后台预热 ACP 连接
+  sessionManager.warmup(['gemini', 'codex']);
 });
 
 // ============ 优雅关闭 ============
 
 process.on('SIGINT', () => {
   console.log('\n[Server] 正在关闭...');
-  scheduler.stop();
-  server.close(() => {
-    store.close();
-    process.exit(0);
+  sessionManager.closeAll().then(() => {
+    server.close(() => {
+      store.close();
+      process.exit(0);
+    });
   });
 });
 
 process.on('SIGTERM', () => {
-  scheduler.stop();
-  server.close(() => {
-    store.close();
-    process.exit(0);
+  sessionManager.closeAll().then(() => {
+    server.close(() => {
+      store.close();
+      process.exit(0);
+    });
   });
 });
