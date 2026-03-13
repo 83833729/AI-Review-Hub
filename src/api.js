@@ -2,7 +2,7 @@ const crypto = require('crypto');
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
-const { validatePromptPath, validateWorkdir, validateToken, validateCli } = require('./utils/security');
+const { validatePromptPath, validateWorkdir, validateToken, validateCli, validateSkillsDir } = require('./utils/security');
 const logger = require('./logger');
 
 /**
@@ -21,7 +21,7 @@ function createRouter(store, sessionManager, io, orchestrator) {
   /** POST /tasks - 创建任务（通过 ACP session 执行） */
   router.post('/tasks', express.json(), async (req, res) => {
     try {
-      const { taskId, name, cli, prompt, promptRef, workdir, options } = req.body;
+      const { taskId, name, cli, prompt, promptRef, workdir, options, skillsDir } = req.body;
       const taskName = name || taskId || null;
 
       // 校验 CLI
@@ -53,8 +53,14 @@ function createRouter(store, sessionManager, io, orchestrator) {
         if (!wdCheck.valid) return res.status(400).json({ error: wdCheck.reason });
       }
 
+      // 校验技能目录
+      if (skillsDir) {
+        const sdCheck = validateSkillsDir(skillsDir);
+        if (!sdCheck.valid) return res.status(400).json({ error: sdCheck.reason });
+      }
+
       // 创建任务记录
-      const task = store.create({ name: taskName, cli, promptPath, workdir, options });
+      const task = store.create({ name: taskName, cli, promptPath, workdir, skillsDir, options });
       if (io) io.emit('task:status', { taskId: task.id, status: task.status, task });
 
       // 立即返回任务 ID（后台异步执行）
@@ -194,14 +200,18 @@ function createRouter(store, sessionManager, io, orchestrator) {
   /** POST /sessions - 创建会话 */
   router.post('/sessions', express.json(), async (req, res) => {
     try {
-      const { cli, workdir, name, sandbox, options } = req.body;
+      const { cli, workdir, name, sandbox, options, skillsDir } = req.body;
       const cliCheck = validateCli(cli);
       if (!cliCheck.valid) return res.status(400).json({ error: cliCheck.reason });
       if (workdir) {
         const wdCheck = validateWorkdir(workdir);
         if (!wdCheck.valid) return res.status(400).json({ error: wdCheck.reason });
       }
-      const session = await sessionManager.createSession({ cli, workdir, name, sandbox, options });
+      if (skillsDir) {
+        const sdCheck = validateSkillsDir(skillsDir);
+        if (!sdCheck.valid) return res.status(400).json({ error: sdCheck.reason });
+      }
+      const session = await sessionManager.createSession({ cli, workdir, name, sandbox, skillsDir, options });
       res.json({ id: session.id, name: session.name, cli: session.cli, status: session.status });
     } catch (err) {
       res.status(400).json({ error: err.message });

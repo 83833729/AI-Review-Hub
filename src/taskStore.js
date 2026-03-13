@@ -77,6 +77,8 @@ class TaskStore {
     `);
     // 迁移: 旧数据库可能缺少 name 列
     try { this.db.exec('ALTER TABLE tasks ADD COLUMN name TEXT'); } catch (e) { /* 列已存在 */ }
+    // 迁移: 旧数据库可能缺少 skills_dir 列
+    try { this.db.exec('ALTER TABLE tasks ADD COLUMN skills_dir TEXT'); } catch (e) { /* 列已存在 */ }
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status)`);
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_tasks_cli_status ON tasks(cli, status)`);
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_tasks_created_at ON tasks(created_at)`);
@@ -148,6 +150,8 @@ class TaskStore {
     if (row.options && typeof row.options === 'string') {
       try { row.options = JSON.parse(row.options); } catch (e) { row.options = {}; }
     }
+    // 下划线列名 → 驼峰别名（保留原始列名以兼容旧逻辑）
+    if (row.skills_dir !== undefined) row.skillsDir = row.skills_dir;
     return row;
   }
 
@@ -155,14 +159,14 @@ class TaskStore {
 
   /**
    * 创建新任务（ID 由服务端生成）
-   * @param {{ name?: string, cli: string, promptPath: string, workdir?: string, options?: object }} task
+   * @param {{ name?: string, cli: string, promptPath: string, workdir?: string, skillsDir?: string, options?: object }} task
    * @returns {object} 创建的任务记录（含服务端生成的 id）
    */
   create(task) {
     const id = crypto.randomUUID();
     const stmt = this.db.prepare(`
-      INSERT INTO tasks (id, name, cli, prompt_path, workdir, options)
-      VALUES (?, ?, ?, ?, ?, ?)
+      INSERT INTO tasks (id, name, cli, prompt_path, workdir, skills_dir, options)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
     `);
     stmt.run(
       id,
@@ -170,6 +174,7 @@ class TaskStore {
       task.cli,
       task.promptPath,
       task.workdir || null,
+      task.skillsDir || null,
       task.options ? JSON.stringify(task.options) : null,
     );
     return this.get(id);

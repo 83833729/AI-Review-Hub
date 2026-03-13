@@ -49,14 +49,16 @@ server.tool(
     cli: z.enum(['codex', 'claude', 'gemini']).describe('AI CLI 工具名'),
     prompt: z.string().describe('审查指令文本'),
     workdir: z.string().optional().describe('代码工作目录的绝对路径'),
+    skillsDir: z.string().optional().describe('外部技能目录的绝对路径（可选，将临时注入到目标 CLI 的 skills 目录）'),
     sandbox: z.enum(['read-only', 'workspace-write', 'danger-full-access']).default('workspace-write').describe('沙箱模式：read-only / workspace-write（默认）/ danger-full-access'),
     timeout: z.number().optional().describe('超时秒数，默认 300'),
   },
-  async ({ taskId, cli, prompt, workdir, sandbox, timeout }) => {
+  async ({ taskId, cli, prompt, workdir, skillsDir, sandbox, timeout }) => {
     const body = { cli, prompt };
     // 兼容: taskId 作为 name
     if (taskId) body.name = taskId;
     if (workdir) body.workdir = workdir;
+    if (skillsDir) body.skillsDir = skillsDir;
     const options = {};
     if (sandbox) options.sandbox = sandbox;
     if (timeout) options.timeout = timeout;
@@ -127,12 +129,14 @@ server.tool(
     cli: z.enum(['codex', 'gemini', 'claude']).describe('AI CLI 工具名（仅支持 codex/gemini/claude）'),
     workdir: z.string().optional().describe('代码工作目录的绝对路径'),
     name: z.string().optional().describe('会话名称/标签（可选）'),
+    skillsDir: z.string().optional().describe('外部技能目录的绝对路径（可选，将临时注入到目标 CLI 的 skills 目录）'),
     sandbox: z.enum(['read-only', 'workspace-write', 'danger-full-access']).optional().describe('沙箱模式（可选，默认 workspace-write）'),
   },
-  async ({ cli, workdir, name, sandbox }) => {
+  async ({ cli, workdir, name, skillsDir, sandbox }) => {
     const body = { cli };
     if (workdir) body.workdir = workdir;
     if (name) body.name = name;
+    if (skillsDir) body.skillsDir = skillsDir;
     if (sandbox) body.sandbox = sandbox;
     const data = await hubRequest('/sessions', 'POST', body);
     return textResult(data);
