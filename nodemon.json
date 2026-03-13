@@ -1,0 +1,16 @@
+{
+    "watch": [
+        "src",
+        "server.js",
+        "public"
+    ],
+    "ignore": [
+        ".agent",
+        ".gemini",
+        ".claude",
+        "node_modules",
+        "runs",
+        "logs"
+    ],
+    "ext": "js,json"
+}

@@ -9,7 +9,7 @@ const { PermissionChecker } = require('../middleware/permission');
  * @type {Record<string, { cmd: string, args: string[] }>}
  */
 const CLI_ACP_COMMANDS = {
-  codex: { cmd: 'npx', args: ['@zed-industries/codex-acp'] },
+  codex: { cmd: 'npx', args: ['@zed-industries/codex-acp@0.9.5'] },
   gemini: { cmd: 'gemini', args: ['--acp'] },
   claude: { cmd: 'npx', args: ['@zed-industries/claude-agent-acp@latest'] },
 };
