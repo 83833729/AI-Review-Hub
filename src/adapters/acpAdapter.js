@@ -1,6 +1,8 @@
 const { spawn } = require('child_process');
 const { Writable, Readable } = require('stream');
 const EventEmitter = require('events');
+const logger = require('../logger');
+const { PermissionChecker } = require('../middleware/permission');
 
 /**
  * CLI 类型到 ACP 启动命令的映射
@@ -9,7 +11,7 @@ const EventEmitter = require('events');
 const CLI_ACP_COMMANDS = {
   codex: { cmd: 'npx', args: ['@zed-industries/codex-acp'] },
   gemini: { cmd: 'gemini', args: ['--acp'] },
-  claude: { cmd: 'npx', args: ['@anthropic-ai/claude-code-acp@latest'] },
+  claude: { cmd: 'npx', args: ['@zed-industries/claude-agent-acp@latest'] },
 };
 
 /**
@@ -17,26 +19,46 @@ const CLI_ACP_COMMANDS = {
  * 实现 SDK Client 接口，处理来自 agent 的回调请求
  */
 class AcpClientHandler {
+  /**
+   * @param {AcpAdapter} adapter - 父适配器实例
+   */
   constructor(adapter) {
     this.adapter = adapter;
   }
 
-  /** 自动批准工具调用权限 */
+  /**
+   * 根据权限检查器决策工具调用权限
+   * @param {object} params - ACP requestPermission 参数
+   * @returns {Promise<object>} 权限决策结果
+   */
   async requestPermission(params) {
     const toolName = params.toolCall?.title || 'unknown';
-    console.log(`[ACP][Client] 工具权限请求: ${toolName}, 自动批准`);
-    const opt = params.options?.find(o => o.kind === 'approve') || params.options?.[0];
-    return { outcome: { outcome: 'selected', optionId: opt?.optionId || '' } };
+    const result = this.adapter.permissionChecker.check(params);
+
+    if (result.approved) {
+      const opt = params.options?.find(o => o.kind === 'approve') || params.options?.[0];
+      return { outcome: { outcome: 'selected', optionId: opt?.optionId || '' } };
+    }
+
+    /** 拒绝：优先选 deny 选项，否则返回第一个选项 */
+    logger.warn(`[ACP][Client] 工具权限拒绝: ${toolName} — ${result.reason}`);
+    const denyOpt = params.options?.find(o => o.kind === 'deny')
+      || params.options?.find(o => o.kind === 'reject')
+      || params.options?.[0];
+    return { outcome: { outcome: 'selected', optionId: denyOpt?.optionId || '' } };
   }
 
   /** 处理 agent 流式更新 */
   async sessionUpdate(params) {
     const u = params.update;
     if (!u) return;
+    logger.debug(`[ACP][Client] sessionUpdate: type=${u.sessionUpdate}, contentType=${u.content?.type || 'N/A'}`);
     if (u.sessionUpdate === 'agent_message_chunk' && u.content?.type === 'text') {
       this.adapter.emit('chunk', { sessionId: params.sessionId, text: u.content.text });
+    } else if (u.sessionUpdate === 'agent_thought_chunk' && u.content?.type === 'text') {
+      this.adapter.emit('thought', { sessionId: params.sessionId, text: u.content.text });
     } else if (u.sessionUpdate === 'tool_call') {
-      console.log(`[ACP][Client] 工具调用: ${u.title} (${u.status})`);
+      logger.info(`[ACP][Client] 工具调用: ${u.title} (${u.status})`);
     }
   }
 
@@ -62,10 +84,20 @@ class AcpClientHandler {
 class AcpAdapter extends EventEmitter {
   /**
    * @param {'codex'|'gemini'|'claude'} cli - CLI 类型
+   * @param {object} [options]
+   * @param {string} [options.sandbox='workspace-write'] - 沙箱模式
+   *   - `'read-only'`: 只读
+   *   - `'workspace-write'`: workdir 内可写
+   *   - `'danger-full-access'`: 完全放行
+   * @param {string|null} [options.workdir] - 工作目录
    */
-  constructor(cli) {
+  constructor(cli, { sandbox, workdir } = {}) {
     super();
     this.cli = cli;
+    /** @type {string} 沙箱模式 */
+    this.sandbox = sandbox || 'workspace-write';
+    /** @type {string|null} 工作目录 */
+    this.workdir = workdir || null;
     /** @type {import('child_process').ChildProcess|null} */
     this.process = null;
     /** @type {any} ClientSideConnection 实例 */
@@ -74,6 +106,14 @@ class AcpAdapter extends EventEmitter {
     this.initialized = false;
     /** @type {boolean} */
     this.closed = false;
+
+    /** 权限检查器（由 sandbox + workdir 决定） */
+    const config = require('../../config.json');
+    this.permissionChecker = new PermissionChecker({
+      sandbox: this.sandbox,
+      workdir: this.workdir,
+      allowedWorkdirs: config.allowedWorkdirs || [],
+    });
   }
 
   /**
@@ -88,22 +128,46 @@ class AcpAdapter extends EventEmitter {
     if (!mapping) throw new Error(`不支持的 CLI: ${this.cli}`);
 
     const isWin = process.platform === 'win32';
-    this.process = spawn(mapping.cmd, mapping.args, {
+
+    /** 强制子进程使用 UTF-8 编码，避免 Windows GBK 导致中文乱码 */
+    const utf8Env = {
+      ...process.env,
+      PYTHONUTF8: '1',
+      PYTHONIOENCODING: 'utf-8',
+      LANG: 'en_US.UTF-8',
+      ...(isWin ? { CHCP: '65001' } : {}),
+    };
+
+    /**
+     * Windows 下通过 cmd /c 前缀 chcp 65001 切换控制台代码页
+     * 保证 shell 命令（如 PowerShell Get-Content）输出为 UTF-8
+     */
+    const finalCmd = isWin ? 'cmd' : mapping.cmd;
+    const finalArgs = isWin
+      ? ['/c', 'chcp', '65001', '>nul', '&&', mapping.cmd, ...mapping.args]
+      : mapping.args;
+
+    /**
+     * 注意：codex-acp 不支持 --sandbox 参数（会报 unexpected argument 错误）。
+     * sandbox 权限控制通过 PermissionChecker 在服务端实施，无需传给 CLI 子进程。
+     */
+
+    this.process = spawn(finalCmd, finalArgs, {
       cwd: workdir || undefined,
       stdio: ['pipe', 'pipe', 'pipe'],
-      env: { ...process.env },
-      shell: isWin,
+      env: utf8Env,
+      shell: false,
     });
 
     await this._waitForSpawn();
 
     this.process.stderr.on('data', (d) => {
       const text = d.toString().trim();
-      if (text) console.error(`[ACP][${this.cli}][stderr] ${text}`);
+      if (text) logger.error(`[ACP][${this.cli}][stderr] ${text}`);
     });
 
     this.process.on('close', (code) => {
-      console.log(`[ACP] ${this.cli} 进程退出: code=${code}`);
+      logger.info(`[ACP] ${this.cli} 进程退出: code=${code}`);
       this.closed = true;
       this.initialized = false;
       this.connection = null;
@@ -123,13 +187,13 @@ class AcpAdapter extends EventEmitter {
     );
 
     // initialize 握手
-    console.log(`[ACP] 正在与 ${this.cli} 握手...`);
+    logger.info(`[ACP] 正在与 ${this.cli} 握手...`);
     const initResult = await this.connection.initialize({
       protocolVersion: acp.PROTOCOL_VERSION,
       clientCapabilities: {},
     });
     this.initialized = true;
-    console.log(`[ACP] ${this.cli} 初始化完成: v${initResult.protocolVersion}`);
+    logger.info(`[ACP] ${this.cli} 初始化完成: v${initResult.protocolVersion}`);
     return initResult;
   }
 
@@ -146,13 +210,13 @@ class AcpAdapter extends EventEmitter {
       cwd: cwd || process.cwd(),
       mcpServers: [],
     });
-    console.log(`[ACP] ${this.cli} 新 session: ${result.sessionId}`);
+    logger.info(`[ACP] ${this.cli} 新 session: ${result.sessionId}`);
 
     // 尝试按配置切换模型
     if (result.models) {
       const current = result.models.currentModelId;
       const available = result.models.availableModels.map(m => m.modelId);
-      console.log(`[ACP] ${this.cli} 当前模型: ${current}, 可用: [${available.join(', ')}]`);
+      logger.info(`[ACP] ${this.cli} 当前模型: ${current}, 可用: [${available.join(', ')}]`);
 
       const config = require('../../config.json');
       const preferred = config.preferredModel?.[this.cli];
@@ -162,9 +226,9 @@ class AcpAdapter extends EventEmitter {
             sessionId: result.sessionId,
             modelId: preferred,
           });
-          console.log(`[ACP] ${this.cli} 模型已切换: ${current} → ${preferred}`);
+          logger.info(`[ACP] ${this.cli} 模型已切换: ${current} → ${preferred}`);
         } catch (e) {
-          console.warn(`[ACP] ${this.cli} 模型切换失败: ${e.message}, 继续使用 ${current}`);
+          logger.warn(`[ACP] ${this.cli} 模型切换失败: ${e.message}, 继续使用 ${current}`);
         }
       }
     }
@@ -215,7 +279,7 @@ class AcpAdapter extends EventEmitter {
   async cancel(sessionId) {
     if (this.connection && !this.closed) {
       try { await this.connection.cancel({ sessionId }); } catch (e) {
-        console.error(`[ACP] cancel 失败:`, e.message);
+        logger.error(`[ACP] cancel 失败: ${e.message}`);
       }
     }
   }
@@ -269,7 +333,7 @@ class AcpAdapter extends EventEmitter {
           else { clearTimeout(timer); resolve(); }
         });
       }
-    } catch (err) { console.error(`[ACP] 关闭出错:`, err.message); }
+    } catch (err) { logger.error(`[ACP] 关闭出错: ${err.message}`); }
     this.connection = null;
     this.process = null;
   }

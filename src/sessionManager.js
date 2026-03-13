@@ -1,9 +1,11 @@
+const path = require('path');
 const AcpAdapter = require('./adapters/acpAdapter');
+const logger = require('./logger');
 
 /**
  * Session 管理器（单进程多会话模式）
  *
- * 按 CLI 类型维护一个共享的 AcpAdapter 连接，多个 session 复用同一进程。
+ * 按 CLI + workdir 复合 key 维护共享 AcpAdapter 连接，同 CLI 不同 workdir 使用独立进程。
  * 进程崩溃时自动标记所有相关 session 为错误并清理连接，下次创建时重新初始化。
  */
 class SessionManager {
@@ -15,24 +17,32 @@ class SessionManager {
    * @param {number} [options.maxSessions=5] - 最大并发会话数
    * @param {Function} [options.onMessage] - 消息回调
    * @param {Function} [options.onStatusChange] - 状态变更回调
+   * @param {Function} [options.onThought] - 思考过程回调 (targetId, targetType, text) => void
    */
   constructor(store, options = {}) {
     this.store = store;
     this.idleTimeout = (options.idleTimeout || 1800) * 1000;
     this.promptTimeout = (options.promptTimeout || 600) * 1000;
     this.maxSessions = options.maxSessions || 5;
-    this.onMessage = options.onMessage || (() => {});
-    this.onStatusChange = options.onStatusChange || (() => {});
+    this.onMessage = options.onMessage || (() => { });
+    this.onStatusChange = options.onStatusChange || (() => { });
+    this.onThought = options.onThought || null;
 
     /**
-     * 按 CLI 类型共享的 ACP 连接
+     * 按 cli:workdir:sandbox 复合 key 共享的 ACP 连接
      * @type {Map<string, AcpAdapter>}
      */
     this.connections = new Map();
 
     /**
-     * session → { cli, acpSessionId } 映射
-     * @type {Map<string, { cli: string, acpSessionId: string }>}
+     * 并发初始化保护：connKey → 进行中的连接 Promise
+     * @type {Map<string, Promise<AcpAdapter>>}
+     */
+    this._pendingConnections = new Map();
+
+    /**
+     * session → { cli, workdir, sandbox, acpSessionId } 映射
+     * @type {Map<string, { cli: string, workdir: string|null, sandbox: string|null, acpSessionId: string }>}
      */
     this.sessions = new Map();
 
@@ -41,54 +51,96 @@ class SessionManager {
   }
 
   /**
+   * 生成连接池 key（cli + 规范化 workdir + sandbox）
+   * @param {string} cli - CLI 类型
+   * @param {string} [workdir] - 工作目录
+   * @param {string} [sandbox] - 沙箱模式
+   * @returns {string} 复合 key
+   */
+  _connKey(cli, workdir, sandbox) {
+    return `${cli}:${path.resolve(workdir || process.cwd())}:${sandbox || 'workspace-write'}`;
+  }
+
+  /**
    * 预热 ACP 连接（服务启动时调用，后台非阻塞）
    * @param {string[]} [cliList=['gemini']] - 要预热的 CLI 类型列表
    */
   warmup(cliList = ['gemini']) {
     for (const cli of cliList) {
-      console.log(`[SessionManager] 预热 ${cli} ACP 连接...`);
+      logger.info(`[SessionManager] 预热 ${cli} ACP 连接...`);
       this._getConnection(cli).then(() => {
-        console.log(`[SessionManager] ${cli} ACP 连接预热完成 ✓`);
+        logger.info(`[SessionManager] ${cli} ACP 连接预热完成 ✓`);
       }).catch(err => {
-        console.error(`[SessionManager] ${cli} 预热失败: ${err.message}`);
+        logger.error(`[SessionManager] ${cli} 预热失败: ${err.message}`);
       });
     }
   }
 
   /**
-   * 获取或创建指定 CLI 的共享连接
+   * 获取或创建指定 CLI + workdir + sandbox 的共享连接
+   *
+   * 含并发保护：多个并发请求同时触发时，复用同一个初始化 Promise，
+   * 避免重复 spawn 子进程。
    * @param {string} cli
    * @param {string} [workdir]
+   * @param {string} [sandbox] - 沙箱模式
    * @returns {Promise<AcpAdapter>}
    */
-  async _getConnection(cli, workdir) {
-    let adapter = this.connections.get(cli);
+  async _getConnection(cli, workdir, sandbox) {
+    const key = this._connKey(cli, workdir, sandbox);
+    let adapter = this.connections.get(key);
     if (adapter && !adapter.closed && adapter.initialized) {
       return adapter;
     }
 
     // 清理旧的已关闭连接
     if (adapter) {
-      this.connections.delete(cli);
+      this.connections.delete(key);
     }
 
-    // 创建新连接
-    adapter = new AcpAdapter(cli);
-    adapter.on('close', () => this._handleConnectionClose(cli));
+    // 并发保护：复用进行中的初始化 Promise
+    if (this._pendingConnections.has(key)) {
+      return this._pendingConnections.get(key);
+    }
+
+    const initPromise = this._initConnection(cli, workdir, sandbox, key);
+    this._pendingConnections.set(key, initPromise);
+
+    try {
+      return await initPromise;
+    } finally {
+      this._pendingConnections.delete(key);
+    }
+  }
+
+  /**
+   * 内部：初始化新连接（仅由 _getConnection 调用）
+   * @param {string} cli
+   * @param {string} [workdir]
+   * @param {string} [sandbox]
+   * @param {string} key - 连接池 key
+   * @returns {Promise<AcpAdapter>}
+   */
+  async _initConnection(cli, workdir, sandbox, key) {
+    const adapter = new AcpAdapter(cli, { sandbox, workdir });
+    adapter.on('close', () => this._handleConnectionClose(key));
     await adapter.start(workdir);
-    this.connections.set(cli, adapter);
+    this.connections.set(key, adapter);
+    logger.info(`[SessionManager] 新建连接: ${key}`);
     return adapter;
   }
 
   /**
    * 创建新会话
-   * @param {{ cli: string, workdir?: string, name?: string, options?: object }} params
+   * @param {{ cli: string, workdir?: string, name?: string, sandbox?: string, skillsDir?: string, options?: object }} params
    * @returns {Promise<object>} 会话记录
    */
   async createSession(params) {
     if (this.sessions.size >= this.maxSessions) {
       throw new Error(`已达最大并发会话数 ${this.maxSessions}，请先关闭其他会话`);
     }
+
+    const { setupSkills, cleanupSkills } = require('./utils/skillsLinker');
 
     // 1. 创建数据库记录
     const session = this.store.createSession({
@@ -98,17 +150,60 @@ class SessionManager {
       options: params.options || null,
     });
 
-    try {
-      // 2. 获取共享连接（首次会自动 initialize）
-      const adapter = await this._getConnection(params.cli, params.workdir);
+    /** @type {{taskId: string, cli: string, workdir: string, injectedSkills: string[]}|null} skills 注入句柄 */
+    let skillsHandle = null;
+    /** @type {AcpAdapter|null} ACP 连接实例 */
+    let adapter = null;
+    /** @type {boolean} 是否使用专用 ACP 进程 */
+    let dedicatedAdapter = false;
 
-      // 3. 在共享连接上创建 ACP session
+    try {
+      // 2. 注入外部技能（如有 skillsDir）
+      skillsHandle = await setupSkills(params.cli, params.workdir, params.skillsDir, session.id);
+
+      // 3. 获取 ACP 连接
+      const sandbox = params.sandbox || params.options?.sandbox || 'workspace-write';
+      if (params.skillsDir) {
+        // 有 skillsDir → 创建专用 ACP 进程（确保 CLI 重新扫描 skills）
+        adapter = new AcpAdapter(params.cli, { sandbox, workdir: params.workdir });
+        await adapter.start(params.workdir);
+        dedicatedAdapter = true;
+        logger.info(`[SessionManager] 会话 ${session.id} 使用专用 ACP 进程（skillsDir）`);
+      } else {
+        // 无 skillsDir → 复用共享连接
+        adapter = await this._getConnection(params.cli, params.workdir, sandbox);
+      }
+
+      // 4. 在连接上创建 ACP session
       const acpSessionId = await adapter.createSession(params.workdir);
 
-      // 4. 记录映射
-      this.sessions.set(session.id, { cli: params.cli, acpSessionId });
+      // 5. 记录映射（含 skillsHandle + 专用连接标记）
+      this.sessions.set(session.id, {
+        cli: params.cli,
+        workdir: params.workdir || null,
+        sandbox,
+        acpSessionId,
+        skillsHandle,
+        dedicatedAdapter,
+        adapter: dedicatedAdapter ? adapter : null,
+      });
 
-      // 5. 更新状态
+      // 6. 专用连接注册崩溃监听（共享连接通过 _handleConnectionClose 处理）
+      if (dedicatedAdapter) {
+        const sid = session.id;
+        adapter.on('close', () => {
+          const m = this.sessions.get(sid);
+          if (m?.skillsHandle) cleanupSkills(m.skillsHandle).catch(() => { });
+          this.sessions.delete(sid);
+          const s = this.store.getSession(sid);
+          if (s && !['closed', 'error'].includes(s.status)) {
+            this.store.updateSessionStatus(sid, 'error', { error: '专用 ACP 进程退出' });
+            this.onStatusChange(sid, 'error');
+          }
+        });
+      }
+
+      // 7. 更新状态
       this.store.updateSessionStatus(session.id, 'active');
       this.store.updateSessionStatus(session.id, 'ready');
       this.onStatusChange(session.id, 'ready');
@@ -116,6 +211,12 @@ class SessionManager {
 
       return this.store.getSession(session.id);
     } catch (err) {
+      // 失败时清理已创建的 skills 注入
+      await cleanupSkills(skillsHandle);
+      // 关闭专用 ACP 进程（如果已创建）
+      if (dedicatedAdapter && adapter) {
+        try { await adapter.close(); } catch (_) { /* ignore */ }
+      }
       this.store.updateSessionStatus(session.id, 'error', { error: err.message });
       this.onStatusChange(session.id, 'error');
       throw new Error(`ACP 会话创建失败: ${err.message}`);
@@ -138,7 +239,10 @@ class SessionManager {
     const mapping = this.sessions.get(sessionId);
     if (!mapping) throw new Error('会话连接不存在，可能已过期');
 
-    const adapter = this.connections.get(mapping.cli);
+    // 专用连接从 mapping.adapter 取，共享连接从 connections 池取
+    const adapter = mapping.dedicatedAdapter
+      ? mapping.adapter
+      : this.connections.get(this._connKey(mapping.cli, mapping.workdir, mapping.sandbox));
     if (!adapter || adapter.closed) throw new Error('ACP 连接已断开');
 
     // 记录用户消息
@@ -149,8 +253,21 @@ class SessionManager {
     this.store.updateSessionStatus(sessionId, 'active');
     this.onStatusChange(sessionId, 'active');
 
+    /** @type {string|null} 思考记录 ID */
+    let thoughtId = null;
+
     try {
-      const result = await this._promptWithTimeout(adapter, mapping.acpSessionId, message);
+      const result = await this._executePrompt({
+        adapter, acpSessionId: mapping.acpSessionId, message,
+        onThought: (text) => {
+          if (!thoughtId) thoughtId = this.store.createThought('session', sessionId);
+          this.store.appendThought(thoughtId, text);
+          this.onThought?.(sessionId, 'session', text);
+        },
+      });
+
+      // 终结思考记录
+      if (thoughtId) this.store.finalizeThought(thoughtId, 'completed');
 
       // 记录回复
       const assistantMsg = this.store.addMessage({ sessionId, role: 'assistant', content: result.content });
@@ -163,10 +280,14 @@ class SessionManager {
       return { messageId: assistantMsg.id, reply: result.content, stopReason: result.stopReason };
     } catch (err) {
       const errMsg = err.message || String(err);
+
+      // 终结思考记录（中断）
+      if (thoughtId) this.store.finalizeThought(thoughtId, 'interrupted', errMsg);
+
       this.store.addMessage({ sessionId, role: 'assistant', content: `[错误] ${errMsg}` });
 
       if (errMsg.includes('超时')) {
-        try { await adapter.cancel(mapping.acpSessionId); } catch (_) {}
+        try { await adapter.cancel(mapping.acpSessionId); } catch (_) { }
       }
 
       if (adapter.closed) {
@@ -189,6 +310,13 @@ class SessionManager {
     const session = this.store.getSession(sessionId);
     if (!session) throw new Error(`会话 ${sessionId} 不存在`);
 
+    // 清理 skills 注入
+    const mapping = this.sessions.get(sessionId);
+    if (mapping?.skillsHandle) {
+      const { cleanupSkills } = require('./utils/skillsLinker');
+      await cleanupSkills(mapping.skillsHandle);
+    }
+
     this.sessions.delete(sessionId);
 
     if (!['closed'].includes(session.status)) {
@@ -196,15 +324,24 @@ class SessionManager {
       this.onStatusChange(sessionId, 'closed');
     }
 
-    // 如果该 CLI 没有活跃 session 了，关闭共享进程释放资源
-    const cli = session.cli;
-    const hasActive = [...this.sessions.values()].some(m => m.cli === cli);
-    if (!hasActive) {
-      const adapter = this.connections.get(cli);
-      if (adapter) {
-        console.log(`[SessionManager] ${cli} 无活跃 session，关闭共享进程`);
-        await adapter.close();
-        this.connections.delete(cli);
+    // 如果该会话使用的是专用连接，直接关闭
+    if (mapping?.dedicatedAdapter && mapping?.adapter) {
+      try { await mapping.adapter.close(); } catch (_) { /* ignore */ }
+      logger.info(`[SessionManager] 关闭会话 ${sessionId} 的专用 ACP 进程`);
+    } else {
+      // 共享连接：如果该 connKey 没有活跃 session 了，关闭共享进程释放资源
+      const sessionSandbox = mapping?.sandbox || session.options?.sandbox || 'workspace-write';
+      const connKey = this._connKey(session.cli, session.workdir, sessionSandbox);
+      const hasActive = [...this.sessions.values()].some(m =>
+        this._connKey(m.cli, m.workdir, m.sandbox) === connKey
+      );
+      if (!hasActive) {
+        const adapter = this.connections.get(connKey);
+        if (adapter) {
+          logger.info(`[SessionManager] ${connKey} 无活跃 session，关闭共享进程`);
+          await adapter.close();
+          this.connections.delete(connKey);
+        }
       }
     }
 
@@ -248,15 +385,21 @@ class SessionManager {
   async submitTask(task, prompt, options = {}) {
     const taskId = task.id;
     const config = require('../config.json');
+    const { setupSkills, cleanupSkills } = require('./utils/skillsLinker');
     // CLI 级别超时 > 调用方指定 > 全局默认
     const cliTimeoutSec = config.defaults.cliTimeout?.[task.cli];
     const timeoutMs = (options.timeout || cliTimeoutSec || this.promptTimeout / 1000) * 1000;
     let acpSessionId = null;
     let adapter = null;
-    let chunkListener = null;
+    /** @type {string|null} 思考记录 ID（必须在 try/catch 外层，catch 中需要访问） */
+    let thoughtId = null;
+    /** @type {{taskId: string, cli: string, workdir: string, injectedSkills: string[]}|null} skills 注入句柄（用于 finally 清理） */
+    let skillsHandle = null;
+    /** @type {boolean} 是否使用专用 ACP 进程（有 skillsDir 时不复用共享连接） */
+    let dedicatedAdapter = false;
 
     // 提前注册映射，解决取消竞态（cancelTask 在任何阶段都能找到映射）
-    this._runningTasks.set(taskId, { cli: task.cli, acpSessionId: null, cancelled: false });
+    this._runningTasks.set(taskId, { cli: task.cli, acpSessionId: null, adapter: null, cancelled: false });
 
     try {
       // 1. queued → starting
@@ -265,44 +408,65 @@ class SessionManager {
 
       // 2. 检查是否已被取消
       if (this._runningTasks.get(taskId)?.cancelled) {
+        if (thoughtId) this.store.finalizeThought(thoughtId, 'interrupted', '用户取消');
         this.store.updateStatus(taskId, 'cancelled');
         if (options.onStatusChange) options.onStatusChange(taskId, 'cancelled');
         return;
       }
 
-      // 3. 获取 ACP 连接
-      adapter = await this._getConnection(task.cli, task.workdir);
+      // 3. 注入外部技能（如有 skillsDir）
+      skillsHandle = await setupSkills(task.cli, task.workdir, task.skillsDir, taskId);
 
-      // 4. 创建临时 session
+      // 4. 获取 ACP 连接
+      const sandbox = task.options?.sandbox || 'workspace-write';
+      if (task.skillsDir) {
+        // 有 skillsDir → 创建专用 ACP 进程（不入池，确保 CLI 重新扫描 skills）
+        adapter = new AcpAdapter(task.cli, { sandbox, workdir: task.workdir });
+        await adapter.start(task.workdir);
+        dedicatedAdapter = true;
+        logger.info(`[SessionManager] 任务 ${taskId} 使用专用 ACP 进程（skillsDir）`);
+      } else {
+        // 无 skillsDir → 复用共享连接
+        adapter = await this._getConnection(task.cli, task.workdir, sandbox);
+      }
+
+      // 5. 创建临时 session
       acpSessionId = await adapter.createSession(task.workdir);
 
-      // 5. 更新映射中的 acpSessionId（cancelTask 需要用来 cancel prompt）
+      // 6. 更新映射中的 acpSessionId 和 adapter（cancelTask 需要用来 cancel prompt）
       const mapping = this._runningTasks.get(taskId);
-      if (mapping) mapping.acpSessionId = acpSessionId;
+      if (mapping) {
+        mapping.acpSessionId = acpSessionId;
+        mapping.adapter = adapter;
+      }
 
-      // 6. 再次检查取消标记
+      // 7. 再次检查取消标记
       if (mapping?.cancelled) {
+        if (thoughtId) this.store.finalizeThought(thoughtId, 'interrupted', '用户取消');
         this.store.updateStatus(taskId, 'cancelled');
         if (options.onStatusChange) options.onStatusChange(taskId, 'cancelled');
         return;
-      }
-
-      // 7. 监听流式 chunk，实时推送给调用方
-      if (options.onOutput) {
-        chunkListener = (data) => {
-          if (!data.sessionId || data.sessionId === acpSessionId) {
-            options.onOutput(taskId, data.text);
-          }
-        };
-        adapter.on('chunk', chunkListener);
       }
 
       // 8. starting → running
       this.store.updateStatus(taskId, 'running');
       if (options.onStatusChange) options.onStatusChange(taskId, 'running');
 
-      // 9. 带超时的 prompt
-      const result = await this._promptWithTimeout(adapter, acpSessionId, prompt, timeoutMs);
+      // 9. 执行 prompt（流式 chunk + thought + 超时包裹）
+      const result = await this._executePrompt({
+        adapter,
+        acpSessionId,
+        message: prompt,
+        timeoutMs,
+        onChunk: options.onOutput
+          ? (text) => options.onOutput(taskId, text)
+          : undefined,
+        onThought: (text) => {
+          if (!thoughtId) thoughtId = this.store.createThought('task', taskId);
+          this.store.appendThought(thoughtId, text);
+          options.onThought?.(taskId, text);
+        },
+      });
 
       // 10. 保存结果到 stdout.log
       const fs = require('fs');
@@ -311,27 +475,45 @@ class SessionManager {
       if (!fs.existsSync(runsDir)) fs.mkdirSync(runsDir, { recursive: true });
       fs.writeFileSync(path.join(runsDir, 'stdout.log'), result.content, 'utf-8');
 
-      // 11. completed
+      // 11. 终结思考记录
+      if (thoughtId) this.store.finalizeThought(thoughtId, 'completed');
+
+      // 12. completed
       this.store.updateStatus(taskId, 'completed', { exitCode: 0 });
       if (options.onStatusChange) options.onStatusChange(taskId, 'completed');
 
       return result;
     } catch (err) {
       const errMsg = err.message || String(err);
+
+      // 判断是否为用户取消（而非普通失败/超时）
+      const mapping = this._runningTasks.get(taskId);
+      if (mapping?.cancelled) {
+        if (thoughtId) this.store.finalizeThought(thoughtId, 'interrupted', '用户取消');
+        this.store.updateStatus(taskId, 'cancelled');
+        if (options.onStatusChange) options.onStatusChange(taskId, 'cancelled');
+        return;
+      }
+
+      // 终结思考记录（中断）
+      if (thoughtId) this.store.finalizeThought(thoughtId, 'interrupted', errMsg);
+
       const status = errMsg.includes('超时') ? 'timeout' : 'failed';
 
       // 超时时主动 cancel 底层 prompt
       if (status === 'timeout' && adapter && acpSessionId) {
-        try { await adapter.cancel(acpSessionId); } catch (_) {}
+        try { await adapter.cancel(acpSessionId); } catch (_) { }
       }
 
       this.store.updateStatus(taskId, status, { error: errMsg });
       if (options.onStatusChange) options.onStatusChange(taskId, status);
       throw err;
     } finally {
-      // 移除 chunk 监听器
-      if (chunkListener && adapter) {
-        adapter.removeListener('chunk', chunkListener);
+      // 无论成功失败，清理注入的 skills
+      await cleanupSkills(skillsHandle);
+      // 关闭专用 ACP 进程
+      if (dedicatedAdapter && adapter) {
+        try { await adapter.close(); } catch (_) { /* ignore */ }
       }
       // 清理映射
       this._runningTasks.delete(taskId);
@@ -361,9 +543,12 @@ class SessionManager {
         mapping.cancelled = true;
         // 如果已有 acpSessionId，尝试 cancel 底层 prompt
         if (mapping.acpSessionId) {
-          const adapter = this.connections.get(mapping.cli);
-          if (adapter && !adapter.closed) {
-            try { await adapter.cancel(mapping.acpSessionId); } catch (_) {}
+          // 优先用 mapping.adapter（专用连接），回退到共享池
+          const sandbox = task.options?.sandbox || 'workspace-write';
+          const adpt = mapping.adapter
+            || this.connections.get(this._connKey(mapping.cli, task.workdir, sandbox));
+          if (adpt && !adpt.closed) {
+            try { await adpt.cancel(mapping.acpSessionId); } catch (_) { }
           }
         }
       }
@@ -374,24 +559,120 @@ class SessionManager {
   /** 获取正在运行的任务数 */
   getRunningTasks() { return this._runningTasks.size; }
 
+  // ==================== 临时 Session（供编排层使用） ====================
+
+  /**
+   * 创建临时 ACP session（不纳入长会话池 `this.sessions` 计数）
+   *
+   * 由 MultiAgentOrchestrator 调用，用于讨论/群聊中的逐个 CLI 执行。
+   * 调用方负责在完成后手动清理（不影响 maxSessions 限制）。
+   *
+   * @param {string} cli - CLI 类型
+   * @param {string} [workdir] - 工作目录
+   * @param {string} [sandbox] - 沙箱模式
+   * @returns {Promise<{ adapter: AcpAdapter, acpSessionId: string, connKey: string }>}
+   */
+  async createTempSession(cli, workdir, sandbox) {
+    const resolvedSandbox = sandbox || 'workspace-write';
+    const adapter = await this._getConnection(cli, workdir, resolvedSandbox);
+    const acpSessionId = await adapter.createSession(workdir);
+    const connKey = this._connKey(cli, workdir, resolvedSandbox);
+    logger.info(`[SessionManager] 临时 session 创建: ${cli} → ${acpSessionId}`);
+    return { adapter, acpSessionId, connKey };
+  }
+
+  /**
+   * 暴露 _executePrompt 供编排层使用
+   *
+   * 在内部 prompt 执行内核上包装一层，自动收集 thinking chunks。
+   *
+   * @param {object} params - 同 _executePrompt 参数
+   * @returns {Promise<{ content: string, stopReason: string, thinking: string|null }>}
+   */
+  async executePrompt(params) {
+    const thinkingChunks = [];
+
+    /** 自动注入 onThought 回调，收集思考片段 */
+    const originalOnThought = params.onThought;
+    params.onThought = (text) => {
+      thinkingChunks.push(text);
+      if (originalOnThought) originalOnThought(text);
+    };
+
+    const result = await this._executePrompt(params);
+    return {
+      ...result,
+      thinking: thinkingChunks.length > 0 ? thinkingChunks.join('') : null,
+    };
+  }
+
   // ==================== 内部方法 ====================
 
-  /** 带超时的 prompt */
-  _promptWithTimeout(adapter, acpSessionId, message, timeoutMs) {
+  /**
+   * 统一 prompt 执行内核
+   *
+   * 负责：chunk/thought 监听注册/清理、adapter.prompt() + 超时包裹、结果返回。
+   * 上层（sendMessage / submitTask）各自处理状态机和持久化。
+   *
+   * @param {object} params
+   * @param {AcpAdapter} params.adapter - ACP 适配器实例
+   * @param {string} params.acpSessionId - ACP session ID
+   * @param {string} params.message - 消息文本
+   * @param {number} [params.timeoutMs] - 超时毫秒数（缺省用全局 promptTimeout）
+   * @param {Function} [params.onChunk] - 流式 chunk 回调 (text) => void
+   * @param {Function} [params.onThought] - 思考 chunk 回调 (text) => void
+   * @returns {Promise<{ content: string, stopReason: string }>}
+   */
+  _executePrompt({ adapter, acpSessionId, message, timeoutMs, onChunk, onThought }) {
     const ms = timeoutMs || this.promptTimeout;
+    let chunkListener = null;
+    let thoughtListener = null;
+
+    /** 注册 chunk 监听 */
+    if (onChunk) {
+      chunkListener = (data) => {
+        if (!data.sessionId || data.sessionId === acpSessionId) {
+          try { onChunk(data.text); } catch (_) { /* 隔离回调异常 */ }
+        }
+      };
+      adapter.on('chunk', chunkListener);
+    }
+
+    /** 注册 thought 监听 */
+    if (onThought) {
+      thoughtListener = (data) => {
+        if (!data.sessionId || data.sessionId === acpSessionId) {
+          try { onThought(data.text); } catch (_) { /* 隔离回调异常 */ }
+        }
+      };
+      adapter.on('thought', thoughtListener);
+    }
+
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error(`prompt 超时 (${ms / 1000}s)`)), ms);
+      const timer = setTimeout(
+        () => reject(new Error(`prompt 超时 (${ms / 1000}s)`)),
+        ms,
+      );
       adapter.prompt(acpSessionId, message)
         .then(r => { clearTimeout(timer); resolve(r); })
         .catch(e => { clearTimeout(timer); reject(e); });
+    }).finally(() => {
+      if (chunkListener) adapter.removeListener('chunk', chunkListener);
+      if (thoughtListener) adapter.removeListener('thought', thoughtListener);
     });
   }
 
-  /** 共享连接崩溃处理：标记该 CLI 所有 session 为错误 */
-  _handleConnectionClose(cli) {
-    this.connections.delete(cli);
+  /**
+   * 共享连接崩溃处理：标记该 connKey 关联的所有 session 为错误
+   * @param {string} connKey - cli:workdir 复合 key
+   */
+  _handleConnectionClose(connKey) {
+    const { cleanupSkills } = require('./utils/skillsLinker');
+    this.connections.delete(connKey);
     for (const [sessionId, mapping] of this.sessions.entries()) {
-      if (mapping.cli === cli) {
+      if (this._connKey(mapping.cli, mapping.workdir, mapping.sandbox) === connKey) {
+        // 清理崩溃会话的 skills 注入
+        if (mapping.skillsHandle) cleanupSkills(mapping.skillsHandle).catch(() => { });
         this.sessions.delete(sessionId);
         const s = this.store.getSession(sessionId);
         if (s && !['closed', 'error'].includes(s.status)) {
@@ -412,8 +693,8 @@ class SessionManager {
   async _checkIdle() {
     const idleSessions = this.store.getIdleSessions(this.idleTimeout / 1000);
     for (const s of idleSessions) {
-      console.log(`[SessionManager] 会话 ${s.id} 空闲超时，关闭`);
-      try { await this.closeSession(s.id); } catch (_) {}
+      logger.info(`[SessionManager] 会话 ${s.id} 空闲超时，关闭`);
+      try { await this.closeSession(s.id); } catch (_) { }
     }
     if (this.sessions.size === 0 && this._idleTimer) {
       clearInterval(this._idleTimer); this._idleTimer = null;
@@ -424,10 +705,10 @@ class SessionManager {
   async closeAll() {
     if (this._idleTimer) { clearInterval(this._idleTimer); this._idleTimer = null; }
     for (const id of [...this.sessions.keys()]) {
-      try { await this.closeSession(id); } catch (_) {}
+      try { await this.closeSession(id); } catch (_) { }
     }
     for (const [, adapter] of this.connections) {
-      try { await adapter.close(); } catch (_) {}
+      try { await adapter.close(); } catch (_) { }
     }
     this.connections.clear();
   }

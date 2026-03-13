@@ -6,6 +6,9 @@ const config = require('./config.json');
 const TaskStore = require('./src/taskStore');
 const SessionManager = require('./src/sessionManager');
 const createRouter = require('./src/api');
+const MultiAgentOrchestrator = require('./src/multiAgentOrchestrator');
+const logger = require('./src/logger');
+const { gcOrphanedSkills } = require('./src/utils/skillsLinker');
 
 // ============ 初始化 ============
 
@@ -18,6 +21,8 @@ const store = new TaskStore(dbPath);
 // 服务重启 → 中断的任务和会话标记为失败/错误
 store.markInterrupted();
 store.markSessionsInterrupted();
+store.markThoughtsInterrupted();
+store.markConversationsInterrupted();
 
 const sessionConfig = config.sessions || {};
 const sessionManager = new SessionManager(store, {
@@ -28,9 +33,18 @@ const sessionManager = new SessionManager(store, {
     io.emit('session:message', { sessionId, role, content });
   },
   onStatusChange: (sessionId, status) => {
-    console.log(`[Session] ${sessionId} → ${status}`);
+    logger.info(`[Session] ${sessionId} → ${status}`);
     io.emit('session:status', { sessionId, status });
   },
+  onThought: (targetId, targetType, text) => {
+    if (targetType === 'session') {
+      io.emit('session:thought', { sessionId: targetId, data: text });
+    }
+  },
+});
+
+const orchestrator = new MultiAgentOrchestrator(store, sessionManager, {
+  promptTimeout: sessionConfig.promptTimeout || 600,
 });
 
 // ============ 中间件 ============
@@ -47,19 +61,19 @@ app.use((req, res, next) => {
 });
 
 /** API 路由 */
-app.use('/', createRouter(store, sessionManager, io));
+app.use('/', createRouter(store, sessionManager, io, orchestrator));
 
 /** WebSocket 连接 */
 io.on('connection', (socket) => {
-  console.log(`[WS] 客户端连接: ${socket.id}`);
+  logger.info(`[WS] 客户端连接: ${socket.id}`);
   socket.emit('tasks:sync', { tasks: store.list() });
-  socket.on('disconnect', () => console.log(`[WS] 客户端断开: ${socket.id}`));
+  socket.on('disconnect', () => logger.info(`[WS] 客户端断开: ${socket.id}`));
 });
 
 // ============ 启动 ============
 
 const server = httpServer.listen(config.port, config.host, () => {
-  console.log(`
+  logger.info(`
 ╔══════════════════════════════════════════╗
 ║         AI Review Hub v2.0.0             ║
 ║  http://${config.host}:${config.port}                ║
@@ -69,14 +83,23 @@ const server = httpServer.listen(config.port, config.host, () => {
 ╚══════════════════════════════════════════╝
   `);
 
+  // 启动时清理超过 30 天的思考记录
+  store.cleanupOldThoughts(30);
+
+  // 启动时清理崩溃残留的 skills 注入（刚启动时无存活任务，isTaskAlive 恒返回 false）
+  gcOrphanedSkills(config.allowedWorkdirs || [], () => false).catch(e => logger.warn(`[Skills] GC 失败: ${e.message}`));
+
   // 后台预热 ACP 连接
-  sessionManager.warmup(['gemini', 'codex']);
+  sessionManager.warmup(['gemini', 'codex', 'claude']);
+
+  // 每 24h 定时清理
+  setInterval(() => store.cleanupOldThoughts(30), 24 * 60 * 60 * 1000);
 });
 
 // ============ 优雅关闭 ============
 
 process.on('SIGINT', () => {
-  console.log('\n[Server] 正在关闭...');
+  logger.info('[Server] 正在关闭...');
   sessionManager.closeAll().then(() => {
     server.close(() => {
       store.close();

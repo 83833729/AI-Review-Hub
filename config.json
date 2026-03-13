@@ -14,6 +14,7 @@
   "defaults": {
     "timeout": 600,
     "silentTimeout": 120,
+    "sandbox": "workspace-write",
     "cliTimeout": {
       "codex": 300,
       "gemini": 600,

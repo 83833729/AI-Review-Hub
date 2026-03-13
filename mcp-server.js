@@ -127,11 +127,13 @@ server.tool(
     cli: z.enum(['codex', 'gemini', 'claude']).describe('AI CLI 工具名（仅支持 codex/gemini/claude）'),
     workdir: z.string().optional().describe('代码工作目录的绝对路径'),
     name: z.string().optional().describe('会话名称/标签（可选）'),
+    sandbox: z.enum(['read-only', 'workspace-write', 'danger-full-access']).optional().describe('沙箱模式（可选，默认 workspace-write）'),
   },
-  async ({ cli, workdir, name }) => {
+  async ({ cli, workdir, name, sandbox }) => {
     const body = { cli };
     if (workdir) body.workdir = workdir;
     if (name) body.name = name;
+    if (sandbox) body.sandbox = sandbox;
     const data = await hubRequest('/sessions', 'POST', body);
     return textResult(data);
   }
@@ -184,6 +186,70 @@ server.tool(
   {},
   async () => {
     const data = await hubRequest('/sessions');
+    return textResult(data);
+  }
+);
+
+// ============ 多 CLI 会话（讨论 / 群聊）工具 ============
+
+// ---- create_conversation：创建讨论或群聊 ----
+server.tool(
+  'create_conversation',
+  '创建多 CLI 讨论或群聊。讨论模式（串行）：各 CLI 依次回答，后一个能看到前面所有回答。群聊模式（并行）：各 CLI 同时独立回答。',
+  {
+    type: z.enum(['discussion', 'group_chat']).describe("模式：'discussion'（串行讨论）或 'group_chat'（并行群聊）"),
+    question: z.string().describe('要讨论的问题'),
+    clis: z.array(z.enum(['codex', 'gemini', 'claude'])).min(2).max(5).describe('参与的 CLI 列表（2-5个）'),
+    name: z.string().optional().describe('会话名称（可选）'),
+    workdir: z.string().optional().describe('代码工作目录的绝对路径'),
+    sandbox: z.enum(['read-only', 'workspace-write', 'danger-full-access']).optional().describe('沙箱模式（可选，默认 workspace-write）'),
+  },
+  async ({ type, question, clis, name, workdir, sandbox }) => {
+    const body = { type, question, clis };
+    if (name) body.name = name;
+    if (workdir) body.workdir = workdir;
+    if (sandbox) body.sandbox = sandbox;
+    const data = await hubRequest('/conversations', 'POST', body);
+    return textResult(data);
+  }
+);
+
+// ---- get_conversation：获取讨论/群聊结果 ----
+server.tool(
+  'get_conversation',
+  '获取讨论/群聊的详情、参与者状态和所有消息。',
+  {
+    conversationId: z.string().describe('会话 ID'),
+  },
+  async ({ conversationId }) => {
+    const data = await hubRequest(`/conversations/${encodeURIComponent(conversationId)}`);
+    return textResult(data);
+  }
+);
+
+// ---- cancel_conversation：取消讨论/群聊 ----
+server.tool(
+  'cancel_conversation',
+  '取消一个进行中的讨论或群聊。',
+  {
+    conversationId: z.string().describe('会话 ID'),
+  },
+  async ({ conversationId }) => {
+    const data = await hubRequest(`/conversations/${encodeURIComponent(conversationId)}/cancel`, 'POST');
+    return textResult(data);
+  }
+);
+
+// ---- list_conversations：列出所有讨论/群聊 ----
+server.tool(
+  'list_conversations',
+  '列出所有讨论和群聊（最近 100 条）。可按类型过滤。',
+  {
+    type: z.enum(['discussion', 'group_chat']).optional().describe("可选过滤：'discussion' 或 'group_chat'"),
+  },
+  async ({ type }) => {
+    const params = type ? `?type=${type}` : '';
+    const data = await hubRequest(`/conversations${params}`);
     return textResult(data);
   }
 );

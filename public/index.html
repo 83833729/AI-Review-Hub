@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -22,7 +23,13 @@
       --danger: #f87171;
       --running: #818cf8;
     }
-    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
     body {
       font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
       background: var(--bg-primary);
@@ -30,66 +37,137 @@
       min-height: 100vh;
       overflow-x: hidden;
     }
+
     body::before {
       content: '';
       position: fixed;
       inset: 0;
-      background: radial-gradient(ellipse at 20% 0%, rgba(56,189,248,0.08) 0%, transparent 60%),
-                  radial-gradient(ellipse at 80% 100%, rgba(129,140,248,0.06) 0%, transparent 60%);
+      background: radial-gradient(ellipse at 20% 0%, rgba(56, 189, 248, 0.08) 0%, transparent 60%),
+        radial-gradient(ellipse at 80% 100%, rgba(129, 140, 248, 0.06) 0%, transparent 60%);
       pointer-events: none;
       z-index: 0;
     }
 
     /* 头部 */
     .header {
-      position: sticky; top: 0; z-index: 100;
+      position: sticky;
+      top: 0;
+      z-index: 100;
       backdrop-filter: blur(20px) saturate(1.4);
       background: rgba(10, 14, 23, 0.85);
       border-bottom: 1px solid var(--border);
       padding: 16px 32px;
-      display: flex; align-items: center; justify-content: space-between;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
     }
+
     .header h1 {
-      font-size: 20px; font-weight: 700;
+      font-size: 20px;
+      font-weight: 700;
       background: linear-gradient(135deg, var(--accent), #818cf8);
-      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-      display: flex; align-items: center; gap: 10px;
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      display: flex;
+      align-items: center;
+      gap: 10px;
     }
-    .header h1::before { content: '⚡'; -webkit-text-fill-color: initial; }
+
+    .header h1::before {
+      content: '⚡';
+      -webkit-text-fill-color: initial;
+    }
+
     .status-dot {
-      width: 8px; height: 8px; border-radius: 50%;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
       background: var(--success);
       box-shadow: 0 0 8px var(--success);
       animation: pulse 2s infinite;
     }
-    .status-dot.offline { background: var(--danger); box-shadow: 0 0 8px var(--danger); }
-    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
-    .header-right { display: flex; align-items: center; gap: 16px; }
-    .conn-label { font-size: 13px; color: var(--text-secondary); display: flex; align-items: center; gap: 6px; }
 
-    /* 统计卡片 */
+    .status-dot.offline {
+      background: var(--danger);
+      box-shadow: 0 0 8px var(--danger);
+    }
+
+    @keyframes pulse {
+
+      0%,
+      100% {
+        opacity: 1;
+      }
+
+      50% {
+        opacity: 0.5;
+      }
+    }
+
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .conn-label {
+      font-size: 13px;
+      color: var(--text-secondary);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    /* 统计标签（嵌入 header） */
     .stats {
-      display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px;
-      padding: 24px 32px 0;
-      position: relative; z-index: 1;
+      display: flex;
+      gap: 10px;
     }
+
     .stat-card {
-      background: var(--bg-card);
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 12px;
+      color: var(--text-secondary);
+      padding: 4px 10px;
+      border-radius: 6px;
+      background: rgba(100, 116, 139, 0.1);
       border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 20px;
-      backdrop-filter: blur(10px);
-      transition: all 0.3s;
     }
-    .stat-card:hover { border-color: var(--border-glow); background: var(--bg-card-hover); }
-    .stat-label { font-size: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; }
-    .stat-value { font-size: 32px; font-weight: 700; margin-top: 6px; }
-    .stat-value.running { color: var(--running); }
-    .stat-value.completed { color: var(--success); }
-    .stat-value.failed { color: var(--danger); }
+
+    .stat-label {
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    .stat-value {
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    .stat-value.running {
+      color: var(--running);
+    }
+
+    .stat-value.completed {
+      color: var(--success);
+    }
+
+    .stat-value.failed {
+      color: var(--danger);
+    }
 
     /* 主区域 */
-    .main { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; padding: 20px 32px 32px; position: relative; z-index: 1; }
+    .main {
+      display: grid;
+      grid-template-columns: 2fr 8fr;
+      gap: 20px;
+      padding: 20px 32px 32px;
+      position: relative;
+      z-index: 1;
+      height: calc(100vh - 70px);
+    }
 
     /* 任务列表 */
     .panel {
@@ -97,124 +175,776 @@
       border: 1px solid var(--border);
       border-radius: 12px;
       backdrop-filter: blur(10px);
-      display: flex; flex-direction: column;
-      max-height: 70vh;
+      display: flex;
+      flex-direction: column;
+      max-height: 100%;
+      overflow: hidden;
     }
+
+    #detailPanel {
+      flex: 1;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
     .panel-header {
       padding: 16px 20px;
       border-bottom: 1px solid var(--border);
-      font-weight: 600; font-size: 15px;
-      display: flex; align-items: center; justify-content: space-between;
+      font-weight: 600;
+      font-size: 15px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
     }
-    .panel-body { overflow-y: auto; flex: 1; padding: 8px; }
+
+    .panel-body {
+      overflow-y: auto;
+      flex: 1;
+      padding: 8px;
+    }
 
     /* 任务行 */
     .task-row {
-      display: flex; align-items: center; gap: 12px;
-      padding: 12px 14px; border-radius: 8px;
-      cursor: pointer; transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 14px;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.2s;
       border: 1px solid transparent;
     }
-    .task-row:hover { background: rgba(56, 189, 248, 0.05); border-color: var(--border); }
-    .task-row.active { background: rgba(56, 189, 248, 0.1); border-color: var(--accent); }
-    .task-id { font-family: 'Cascadia Code', 'Fira Code', monospace; font-size: 13px; font-weight: 600; flex: 1; }
-    .task-cli { font-size: 11px; color: var(--text-muted); background: rgba(100,116,139,0.2); padding: 2px 8px; border-radius: 4px; }
+
+    .task-row:hover {
+      background: rgba(56, 189, 248, 0.05);
+      border-color: var(--border);
+    }
+
+    .task-row.active {
+      background: rgba(56, 189, 248, 0.1);
+      border-color: var(--accent);
+    }
+
+    .task-title {
+      font-size: 14px;
+      font-weight: 600;
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: var(--text-primary);
+    }
+
+    .task-cli {
+      font-size: 11px;
+      color: var(--text-muted);
+      background: rgba(100, 116, 139, 0.2);
+      padding: 2px 8px;
+      border-radius: 4px;
+    }
 
     /* 状态徽章 */
     .badge {
-      font-size: 11px; font-weight: 600; padding: 3px 10px;
-      border-radius: 20px; text-transform: uppercase; letter-spacing: 0.5px;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 3px 10px;
+      border-radius: 20px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
       white-space: nowrap;
     }
-    .badge.queued { background: rgba(251,191,36,0.15); color: var(--warning); }
-    .badge.starting { background: rgba(129,140,248,0.15); color: var(--running); }
-    .badge.running { background: rgba(129,140,248,0.2); color: var(--running); animation: glow 2s infinite; }
-    .badge.completed { background: rgba(52,211,153,0.15); color: var(--success); }
-    .badge.failed { background: rgba(248,113,113,0.15); color: var(--danger); }
-    .badge.cancelled { background: rgba(100,116,139,0.2); color: var(--text-muted); }
-    .badge.timeout { background: rgba(251,191,36,0.2); color: var(--warning); }
-    @keyframes glow { 0%,100% { box-shadow: 0 0 4px rgba(129,140,248,0.3); } 50% { box-shadow: 0 0 12px rgba(129,140,248,0.5); } }
+
+    .badge.queued {
+      background: rgba(251, 191, 36, 0.15);
+      color: var(--warning);
+    }
+
+    .badge.starting {
+      background: rgba(129, 140, 248, 0.15);
+      color: var(--running);
+    }
+
+    .badge.running {
+      background: rgba(129, 140, 248, 0.2);
+      color: var(--running);
+      animation: glow 2s infinite;
+    }
+
+    .badge.completed {
+      background: rgba(52, 211, 153, 0.15);
+      color: var(--success);
+    }
+
+    .badge.failed {
+      background: rgba(248, 113, 113, 0.15);
+      color: var(--danger);
+    }
+
+    .badge.cancelled {
+      background: rgba(100, 116, 139, 0.2);
+      color: var(--text-muted);
+    }
+
+    .badge.timeout {
+      background: rgba(251, 191, 36, 0.2);
+      color: var(--warning);
+    }
+
+    .badge.partial {
+      background: rgba(251, 191, 36, 0.2);
+      color: var(--warning);
+    }
+
+    .badge.idle {
+      background: rgba(100, 116, 139, 0.2);
+      color: var(--text-muted);
+    }
+
+    @keyframes glow {
+
+      0%,
+      100% {
+        box-shadow: 0 0 4px rgba(129, 140, 248, 0.3);
+      }
+
+      50% {
+        box-shadow: 0 0 12px rgba(129, 140, 248, 0.5);
+      }
+    }
 
     /* 详情面板 */
-    .detail-empty { display: flex; align-items: center; justify-content: center; color: var(--text-muted); font-size: 14px; min-height: 300px; }
-    .detail-meta { padding: 16px 20px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; border-bottom: 1px solid var(--border); }
-    .meta-item { font-size: 13px; }
-    .meta-label { color: var(--text-muted); font-size: 11px; display: block; margin-bottom: 2px; }
-    .detail-tabs { display: flex; border-bottom: 1px solid var(--border); }
-    .tab-btn {
-      padding: 10px 20px; font-size: 13px; cursor: pointer;
-      background: none; border: none; color: var(--text-secondary);
-      border-bottom: 2px solid transparent; transition: all 0.2s;
+    .detail-empty {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-muted);
+      font-size: 14px;
+      min-height: 300px;
     }
-    .tab-btn:hover { color: var(--text-primary); }
-    .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+    .detail-meta {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .meta-tag {
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 4px;
+      background: rgba(100, 116, 139, 0.15);
+      color: var(--text-secondary);
+      display: flex;
+      align-items: center;
+      gap: 3px;
+    }
+
+    .meta-tag .meta-label {
+      color: var(--text-muted);
+      font-size: 10px;
+    }
+
+    .detail-tabs {
+      display: flex;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .tab-btn {
+      padding: 10px 20px;
+      font-size: 13px;
+      cursor: pointer;
+      background: none;
+      border: none;
+      color: var(--text-secondary);
+      border-bottom: 2px solid transparent;
+      transition: all 0.2s;
+    }
+
+    .tab-btn:hover {
+      color: var(--text-primary);
+    }
+
+    .tab-btn.active {
+      color: var(--accent);
+      border-bottom-color: var(--accent);
+    }
+
     .detail-content {
-      flex: 1; overflow-y: auto; padding: 16px 20px;
-      font-family: 'Cascadia Code', 'Fira Code', monospace;
-      font-size: 13px; line-height: 1.6;
-      white-space: pre-wrap; word-break: break-all;
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px 20px;
+      font-size: 13px;
+      line-height: 1.6;
       color: var(--text-secondary);
     }
-    .detail-content .output-line { margin: 0; padding: 2px 0; }
-    .cancel-btn {
-      padding: 6px 16px; font-size: 12px; font-weight: 600;
-      background: rgba(248,113,113,0.15); color: var(--danger);
-      border: 1px solid rgba(248,113,113,0.3); border-radius: 6px;
-      cursor: pointer; transition: all 0.2s;
+
+    /* 聊天容器 */
+    .chat-container {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      padding: 16px 20px;
+      flex: 1;
+      overflow-y: auto;
     }
-    .cancel-btn:hover { background: rgba(248,113,113,0.25); }
+
+    /* 单条消息行 */
+    .chat-msg {
+      display: flex;
+      gap: 10px;
+      max-width: 90%;
+    }
+
+    .chat-msg.assistant {
+      align-self: flex-start;
+    }
+
+    .chat-msg.user {
+      align-self: flex-end;
+      flex-direction: row-reverse;
+    }
+
+    .chat-msg.system {
+      align-self: center;
+      max-width: 95%;
+    }
+
+    /* 头像 */
+    .msg-avatar {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+      flex-shrink: 0;
+      overflow: hidden;
+    }
+
+    .chat-msg.assistant .msg-avatar {
+      background: rgba(56, 189, 248, 0.2);
+    }
+
+    .chat-msg.user .msg-avatar {
+      background: rgba(52, 211, 153, 0.2);
+    }
+
+    .chat-msg.system .msg-avatar {
+      display: none;
+    }
+
+    /* 气泡 */
+    .msg-bubble {
+      padding: 12px 16px;
+      border-radius: 12px;
+      font-size: 14px;
+      line-height: 1.6;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .chat-msg.assistant .msg-bubble {
+      background: var(--bg-card-hover);
+      border: 1px solid var(--border);
+      border-top-left-radius: 2px;
+      color: var(--text-primary);
+    }
+
+    .chat-msg.user .msg-bubble {
+      background: linear-gradient(135deg, rgba(56, 189, 248, 0.2), rgba(129, 140, 248, 0.2));
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      border-top-right-radius: 2px;
+      color: var(--text-primary);
+    }
+
+    .chat-msg.system .msg-bubble {
+      background: rgba(251, 191, 36, 0.08);
+      border: 1px dashed rgba(251, 191, 36, 0.25);
+      color: var(--text-muted);
+      font-size: 12px;
+      text-align: center;
+    }
+
+    /* 角色标签 + 时间 */
+    .msg-role {
+      font-size: 11px;
+      font-weight: 600;
+      margin-bottom: 2px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-muted);
+    }
+
+    .msg-time {
+      font-size: 10px;
+      color: var(--text-muted);
+      margin-top: 4px;
+    }
+
+    .cancel-btn {
+      padding: 6px 16px;
+      font-size: 12px;
+      font-weight: 600;
+      background: rgba(248, 113, 113, 0.15);
+      color: var(--danger);
+      border: 1px solid rgba(248, 113, 113, 0.3);
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .cancel-btn:hover {
+      background: rgba(248, 113, 113, 0.25);
+    }
 
     /* 空状态 */
-    .empty { text-align: center; padding: 40px; color: var(--text-muted); }
-    .empty-icon { font-size: 48px; margin-bottom: 12px; opacity: 0.3; }
+    .empty {
+      text-align: center;
+      padding: 40px;
+      color: var(--text-muted);
+    }
+
+    .empty-icon {
+      font-size: 48px;
+      margin-bottom: 12px;
+      opacity: 0.3;
+    }
 
     /* 滚动条 */
-    ::-webkit-scrollbar { width: 6px; }
-    ::-webkit-scrollbar-track { background: transparent; }
-    ::-webkit-scrollbar-thumb { background: rgba(100,116,139,0.3); border-radius: 3px; }
-    ::-webkit-scrollbar-thumb:hover { background: rgba(100,116,139,0.5); }
+    ::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: rgba(100, 116, 139, 0.3);
+      border-radius: 3px;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(100, 116, 139, 0.5);
+    }
+
+    /* 思考块 */
+    .thought-block {
+      border: 1px dashed rgba(168, 85, 247, 0.3);
+      border-radius: 10px;
+      background: rgba(168, 85, 247, 0.05);
+      overflow: hidden;
+      margin-bottom: 4px;
+    }
+
+    .thought-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 14px;
+      cursor: pointer;
+      font-size: 13px;
+      color: rgba(168, 85, 247, 0.8);
+      transition: background 0.2s;
+      user-select: none;
+    }
+
+    .thought-header:hover {
+      background: rgba(168, 85, 247, 0.08);
+    }
+
+    .thought-header-left {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .thought-header-right {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .thought-toggle {
+      font-size: 11px;
+      opacity: 0.6;
+      transition: transform 0.3s;
+    }
+
+    .thought-toggle.expanded {
+      transform: rotate(180deg);
+    }
+
+    .thought-body {
+      max-height: 0;
+      overflow: hidden;
+      transition: max-height 0.3s ease;
+    }
+
+    .thought-body.expanded {
+      max-height: 300px;
+      overflow-y: auto;
+    }
+
+    .thought-content {
+      padding: 0 14px 12px;
+      font-size: 12px;
+      line-height: 1.6;
+      color: var(--text-secondary);
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .thought-error-btn {
+      position: relative;
+      font-size: 14px;
+      cursor: pointer;
+      line-height: 1;
+    }
+
+    .thought-error-tooltip {
+      display: none;
+      position: absolute;
+      bottom: calc(100% + 8px);
+      right: 0;
+      background: rgba(248, 113, 113, 0.15);
+      border: 1px solid rgba(248, 113, 113, 0.3);
+      color: var(--danger);
+      font-size: 12px;
+      padding: 8px 12px;
+      border-radius: 6px;
+      white-space: nowrap;
+      z-index: 10;
+    }
+
+    .thought-error-btn:hover .thought-error-tooltip {
+      display: block;
+    }
+
+    @keyframes thought-pulse {
+
+      0%,
+      100% {
+        opacity: 1;
+      }
+
+      50% {
+        opacity: 0.5;
+      }
+    }
+
+    .thought-active {
+      animation: thought-pulse 1.5s infinite;
+    }
+
+    .thought-hint {
+      border: 1px dashed rgba(100, 116, 139, 0.3);
+      border-radius: 10px;
+      background: rgba(100, 116, 139, 0.05);
+      padding: 10px 14px;
+      font-size: 12px;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
 
     @media (max-width: 768px) {
-      .stats { grid-template-columns: repeat(2, 1fr); }
-      .main { grid-template-columns: 1fr; }
+      .stats {
+        grid-template-columns: repeat(2, 1fr);
+      }
+
+      .main {
+        grid-template-columns: 1fr;
+        height: auto;
+      }
+    }
+
+    /* 类型过滤器 */
+    .type-filter {
+      display: flex;
+      gap: 4px;
+      padding: 0 8px 8px;
+    }
+
+    .type-filter-btn {
+      padding: 4px 10px;
+      font-size: 11px;
+      background: rgba(100, 116, 139, 0.1);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      color: var(--text-secondary);
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .type-filter-btn:hover {
+      background: rgba(56, 189, 248, 0.1);
+    }
+
+    .type-filter-btn.active {
+      background: rgba(56, 189, 248, 0.15);
+      color: var(--accent);
+      border-color: var(--accent);
+    }
+
+    /* CLI 颜色边框（群聊/讨论） */
+    .cli-border-codex {
+      border-left: 3px solid #34d399 !important;
+    }
+
+    .cli-border-gemini {
+      border-left: 3px solid #38bdf8 !important;
+    }
+
+    .cli-border-claude {
+      border-left: 3px solid #fb923c !important;
+    }
+
+    /* Trace 操作按钮（思考/输入） */
+    .trace-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 6px;
+    }
+
+    .trace-btn {
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      color: #94a3b8;
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .trace-btn:hover {
+      background: rgba(255, 255, 255, 0.12);
+      color: #e2e8f0;
+    }
+
+    /* Trace Modal */
+    .trace-modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.6);
+      backdrop-filter: blur(4px);
+      z-index: 1000;
+      justify-content: center;
+      align-items: center;
+    }
+
+    .trace-modal-overlay.visible {
+      display: flex;
+    }
+
+    .trace-modal {
+      background: #1e293b;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 12px;
+      width: min(90vw, 720px);
+      max-height: 80vh;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+    }
+
+    .trace-modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 16px 20px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .trace-modal-header h3 {
+      margin: 0;
+      font-size: 15px;
+      color: #e2e8f0;
+    }
+
+    .trace-modal-close {
+      background: none;
+      border: none;
+      color: #94a3b8;
+      font-size: 20px;
+      cursor: pointer;
+      padding: 4px 8px;
+      border-radius: 4px;
+    }
+
+    .trace-modal-close:hover {
+      background: rgba(255, 255, 255, 0.1);
+      color: #f1f5f9;
+    }
+
+    .trace-modal-body {
+      padding: 20px;
+      overflow-y: auto;
+      flex: 1;
+    }
+
+    .trace-modal-body pre {
+      margin: 0;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-size: 13px;
+      line-height: 1.6;
+      color: #cbd5e1;
+      font-family: 'Cascadia Code', 'Fira Code', monospace;
+    }
+
+    .trace-modal-footer {
+      padding: 12px 20px;
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+
+    .trace-copy-btn {
+      background: rgba(56, 189, 248, 0.15);
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      color: #38bdf8;
+      font-size: 12px;
+      padding: 6px 14px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .trace-copy-btn:hover {
+      background: rgba(56, 189, 248, 0.25);
+    }
+
+    /* 类型徽章 */
+    .type-badge {
+      font-size: 10px;
+      padding: 1px 6px;
+      border-radius: 4px;
+      margin-right: 4px;
+    }
+
+    .type-badge.discussion {
+      background: rgba(168, 85, 247, 0.15);
+      color: #a855f7;
+    }
+
+    .type-badge.group_chat {
+      background: rgba(56, 189, 248, 0.15);
+      color: #38bdf8;
+    }
+
+    /* 参与者状态标签 */
+    .participant-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 4px;
+      background: rgba(100, 116, 139, 0.15);
+      color: var(--text-secondary);
+    }
+
+    .participant-tag.running {
+      color: var(--running);
+    }
+
+    .participant-tag.done {
+      color: var(--success);
+    }
+
+    .participant-tag.error {
+      color: var(--danger);
+    }
+
+    .participant-tag.pending {
+      color: var(--text-muted);
+    }
+
+    /* 轮次分割线 */
+    .round-divider {
+      text-align: center;
+      font-size: 11px;
+      color: var(--text-muted);
+      padding: 8px 0;
+      position: relative;
+    }
+
+    .round-divider::before,
+    .round-divider::after {
+      content: '';
+      position: absolute;
+      top: 50%;
+      width: 30%;
+      height: 1px;
+      background: var(--border);
+    }
+
+    .round-divider::before {
+      left: 5%;
+    }
+
+    .round-divider::after {
+      right: 5%;
     }
   </style>
 </head>
+
 <body>
   <div class="header">
     <h1>AI Review Hub</h1>
     <div class="header-right">
+      <div class="stats">
+        <div class="stat-card"><span class="stat-label">总</span><span class="stat-value" id="statTotal">0</span></div>
+        <div class="stat-card"><span class="stat-label">运行</span><span class="stat-value running"
+            id="statRunning">0</span></div>
+        <div class="stat-card"><span class="stat-label">完成</span><span class="stat-value completed"
+            id="statCompleted">0</span></div>
+        <div class="stat-card"><span class="stat-label">失败</span><span class="stat-value failed"
+            id="statFailed">0</span></div>
+      </div>
       <span class="conn-label"><span class="status-dot" id="wsStatus"></span> <span id="wsLabel">连接中...</span></span>
     </div>
   </div>
 
-  <div class="stats">
-    <div class="stat-card"><div class="stat-label">总任务</div><div class="stat-value" id="statTotal">0</div></div>
-    <div class="stat-card"><div class="stat-label">运行中</div><div class="stat-value running" id="statRunning">0</div></div>
-    <div class="stat-card"><div class="stat-label">已完成</div><div class="stat-value completed" id="statCompleted">0</div></div>
-    <div class="stat-card"><div class="stat-label">失败</div><div class="stat-value failed" id="statFailed">0</div></div>
-  </div>
-
   <div class="main">
-    <!-- 任务列表 -->
+    <!-- 统一列表 -->
     <div class="panel">
       <div class="panel-header">
-        <span>📋 任务列表</span>
+        <span>📋 列表</span>
         <span id="taskCount" style="font-size:12px;color:var(--text-muted)"></span>
       </div>
+      <div class="type-filter">
+        <button class="type-filter-btn active" onclick="setFilter('all',this)">全部</button>
+        <button class="type-filter-btn" onclick="setFilter('task',this)">📝 任务</button>
+        <button class="type-filter-btn" onclick="setFilter('discussion',this)">💬 讨论</button>
+        <button class="type-filter-btn" onclick="setFilter('group_chat',this)">👥 群聊</button>
+      </div>
       <div class="panel-body" id="taskList">
-        <div class="empty"><div class="empty-icon">📭</div>暂无任务</div>
+        <div class="empty">
+          <div class="empty-icon">📭</div>暂无条目
+        </div>
       </div>
     </div>
 
-    <!-- 任务详情 -->
+    <!-- 详情 -->
     <div class="panel">
-      <div class="panel-header">
-        <span>🔍 任务详情</span>
-        <button class="cancel-btn" id="cancelBtn" style="display:none" onclick="cancelTask()">取消任务</button>
+      <div class="panel-header" id="detailHeader">
+        <span>🔍 详情</span>
+        <div style="display:flex;align-items:center;gap:8px">
+          <div class="detail-meta" id="detailMeta"></div>
+          <button class="cancel-btn" id="cancelBtn" style="display:none" onclick="cancelCurrent()">取消</button>
+        </div>
       </div>
       <div id="detailPanel">
-        <div class="detail-empty">选择左侧任务查看详情</div>
+        <div class="detail-empty">选择左侧条目查看详情</div>
       </div>
     </div>
   </div>
@@ -222,7 +952,10 @@
   <script>
     const API = '';
     let tasks = [];
+    let conversations = [];
     let selectedId = null;
+    let selectedType = 'task'; // 'task' | 'discussion' | 'group_chat'
+    let filterType = 'all'; // 'all' | 'task' | 'discussion' | 'group_chat'
     let logCursors = {};
 
     /** 状态中文映射 */
@@ -230,6 +963,7 @@
       queued: '排队中', starting: '启动中', running: '运行中',
       completed: '已完成', failed: '失败', cancelled: '已取消',
       timeout: '超时', cancel_requested: '取消中',
+      idle: '等待中', partial: '部分完成',
     };
     function statusLabel(s) { return STATUS_LABELS[s] || s; }
 
@@ -264,22 +998,78 @@
       } else {
         tasks.unshift({ id: data.taskId, cli: data.task?.cli || '?', status: data.status, ...data.task });
       }
+
+      // 终态时终结思考块
+      if (['completed', 'failed', 'timeout', 'cancelled'].includes(data.status)) {
+        if (selectedId === data.taskId && currentThought.el) {
+          const isErr = ['failed', 'timeout', 'cancelled'].includes(data.status);
+          finalizeThoughtBlock(
+            isErr ? 'interrupted' : 'completed',
+            isErr ? (data.task?.error || data.status) : null,
+          );
+        }
+      }
+
       renderAll();
       if (selectedId === data.taskId) loadDetail(data.taskId);
     });
 
     /** 实时输出 */
     socket.on('task:output', (data) => {
-      if (selectedId === data.taskId) {
-        const content = document.getElementById('logContent');
+      if (selectedId === data.taskId && selectedType === 'task') {
+        const content = document.getElementById('chatContainer');
         if (content) {
-          content.textContent += data.data;
+          content.insertAdjacentHTML('beforeend', renderBubble('system', data.data));
           content.scrollTop = content.scrollHeight;
         }
       }
-      // 更新 output_lines
       const t = tasks.find(t => t.id === data.taskId);
       if (t) t.output_lines = (t.output_lines || 0) + 1;
+    });
+
+    /** 实时思考过程 */
+    socket.on('task:thought', (data) => {
+      if (selectedId !== data.taskId || selectedType !== 'task') return;
+      if (!currentThought.el) createThoughtBlock();
+      currentThought.text += data.data;
+      throttledUpdateThought();
+    });
+
+    // ============ Conversation WebSocket ============
+
+    /** 会话消息实时推送 */
+    socket.on('conversation:message', (data) => {
+      if (selectedId === data.conversationId && selectedType !== 'task') {
+        const container = document.getElementById('chatContainer');
+        if (container) {
+          container.insertAdjacentHTML('beforeend',
+            renderBubble(data.role, data.content, formatTime(new Date()), data.cli));
+          container.scrollTop = container.scrollHeight;
+        }
+      }
+    });
+
+    /** 参与者状态变更 */
+    socket.on('conversation:participant', (data) => {
+      if (selectedId === data.conversationId && selectedType !== 'task') {
+        const tag = document.getElementById(`participant-${data.cli}`);
+        if (tag) {
+          tag.className = `participant-tag ${data.status}`;
+          tag.textContent = `${data.cli}: ${data.status}`;
+        }
+      }
+    });
+
+    /** 会话状态变更 */
+    socket.on('conversation:status', (data) => {
+      const idx = conversations.findIndex(c => c.id === data.conversationId);
+      if (idx >= 0) conversations[idx].status = data.status;
+      renderAll();
+      if (selectedId === data.conversationId) {
+        // 更新取消按钮和状态
+        const isActive = ['idle', 'running'].includes(data.status);
+        document.getElementById('cancelBtn').style.display = isActive ? 'block' : 'none';
+      }
     });
 
     // ============ 渲染 ============
@@ -289,10 +1079,11 @@
     }
 
     function renderStats() {
-      const total = tasks.length;
-      const running = tasks.filter(t => ['running','starting','queued'].includes(t.status)).length;
-      const completed = tasks.filter(t => t.status === 'completed').length;
-      const failed = tasks.filter(t => ['failed','timeout'].includes(t.status)).length;
+      const allItems = getFilteredItems();
+      const total = allItems.length;
+      const running = allItems.filter(t => ['running', 'starting', 'queued', 'idle'].includes(t.status)).length;
+      const completed = allItems.filter(t => ['completed', 'partial'].includes(t.status)).length;
+      const failed = allItems.filter(t => ['failed', 'timeout'].includes(t.status)).length;
       document.getElementById('statTotal').textContent = total;
       document.getElementById('statRunning').textContent = running;
       document.getElementById('statCompleted').textContent = completed;
@@ -300,29 +1091,68 @@
       document.getElementById('taskCount').textContent = `${total} 条`;
     }
 
+    /** 获取过滤后的统一列表 */
+    function getFilteredItems() {
+      let items = [];
+      if (filterType === 'all' || filterType === 'task') {
+        items = items.concat(tasks.map(t => ({ ...t, _type: 'task' })));
+      }
+      if (filterType === 'all' || filterType === 'discussion' || filterType === 'group_chat') {
+        const filtered = filterType === 'all'
+          ? conversations
+          : conversations.filter(c => c.type === filterType);
+        items = items.concat(filtered.map(c => ({ ...c, _type: c.type })));
+      }
+      // 按创建时间倒序
+      items.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
+      return items;
+    }
+
+    /** 设置过滤类型 */
+    function setFilter(type, btn) {
+      filterType = type;
+      document.querySelectorAll('.type-filter-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      renderAll();
+    }
+
     function renderList() {
+      const items = getFilteredItems();
       const el = document.getElementById('taskList');
-      if (tasks.length === 0) {
-        el.innerHTML = '<div class="empty"><div class="empty-icon">📭</div>暂无任务</div>';
+      if (items.length === 0) {
+        el.innerHTML = '<div class="empty"><div class="empty-icon">📭</div>暂无条目</div>';
         return;
       }
-      el.innerHTML = tasks.map(t => `
-        <div class="task-row ${t.id === selectedId ? 'active' : ''}" data-id="${escapeHtml(t.id)}">
-          <span class="task-id">${escapeHtml(t.id)}</span>
-          <span class="task-cli">${escapeHtml(t.cli || '?')}</span>
-          <span class="badge ${escapeHtml(t.status)}">${statusLabel(t.status)}</span>
-        </div>
-      `).join('');
-      // 事件委托
+      el.innerHTML = items.map(t => {
+        const title = t.name || (t.question ? t.question.substring(0, 30) : '') || (t.id ? t.id.substring(0, 8) : '无标题');
+        const typeIcon = t._type === 'discussion' ? '💬' : t._type === 'group_chat' ? '👥' : '📝';
+        const typeBadge = t._type !== 'task'
+          ? `<span class="type-badge ${escapeHtml(t._type)}">${t._type === 'discussion' ? '讨论' : '群聊'}</span>`
+          : '';
+        return `
+          <div class="task-row ${t.id === selectedId ? 'active' : ''}" data-id="${escapeHtml(t.id)}" data-type="${escapeHtml(t._type)}">
+            <span style="font-size:14px">${typeIcon}</span>
+            <span class="task-title" title="${escapeHtml(t.name || t.question || t.id)}">${typeBadge}${escapeHtml(title)}</span>
+            <span class="task-cli">${escapeHtml(t.cli || (t.type ? '多 CLI' : '?'))}</span>
+            <span class="badge ${escapeHtml(t.status)}">${statusLabel(t.status)}</span>
+          </div>
+        `;
+      }).join('');
       el.querySelectorAll('.task-row').forEach(row => {
-        row.addEventListener('click', () => selectTask(row.dataset.id));
+        row.addEventListener('click', () => selectItem(row.dataset.id, row.dataset.type));
       });
     }
 
-    function selectTask(id) {
+    function selectItem(id, type) {
       selectedId = id;
+      selectedType = type || 'task';
+      resetThought();
       renderList();
-      loadDetail(id);
+      if (selectedType === 'task') {
+        loadDetail(id);
+      } else {
+        loadConversationDetail(id);
+      }
     }
 
     /** 耗时实时更新定时器 */
@@ -336,30 +1166,28 @@
         const res = await fetch(`${API}/tasks/${id}`);
         const data = await res.json();
         const panel = document.getElementById('detailPanel');
-        const isActive = ['running','starting','queued','cancel_requested'].includes(data.status);
+        selectedCli = data.cli;
+        const isActive = ['running', 'starting', 'queued', 'cancel_requested'].includes(data.status);
 
         document.getElementById('cancelBtn').style.display = isActive ? 'block' : 'none';
 
+        // 更新 header 内的 meta 标签
+        const metaEl = document.getElementById('detailMeta');
+        metaEl.innerHTML = `
+          <span class="meta-tag"><span class="meta-label">CLI</span>${escapeHtml(data.cli)}</span>
+          <span class="badge ${escapeHtml(data.status)}">${statusLabel(data.status)}</span>
+          <span class="meta-tag"><span class="meta-label">沙箱</span>${escapeHtml(data.options?.sandbox || 'workspace-write')}</span>
+          <span class="meta-tag"><span class="meta-label">耗时</span><span id="elapsedTime">${escapeHtml(String(data.elapsed))}s</span></span>
+          ${data.workdir && data.workdir !== '-' ? `<span class="meta-tag"><span class="meta-label">目录</span>${escapeHtml(data.workdir)}</span>` : ''}
+          ${data.error ? `<span class="meta-tag" style="color:var(--danger)">✖ ${escapeHtml(data.error).substring(0, 30)}</span>` : ''}
+        `;
+
         panel.innerHTML = `
-          <div class="detail-meta">
-            <div class="meta-item"><span class="meta-label">任务 ID</span>${escapeHtml(data.taskId)}</div>
-            <div class="meta-item"><span class="meta-label">CLI</span>${escapeHtml(data.cli)}</div>
-            <div class="meta-item"><span class="meta-label">状态</span><span class="badge ${escapeHtml(data.status)}">${statusLabel(data.status)}</span></div>
-            <div class="meta-item"><span class="meta-label">耗时</span><span id="elapsedTime">${escapeHtml(String(data.elapsed))}s</span></div>
-            <div class="meta-item"><span class="meta-label">沙箱</span>${escapeHtml(data.options?.sandbox || 'workspace-write')}</div>
-            <div class="meta-item"><span class="meta-label">超时</span>${escapeHtml(String(data.options?.timeout || 600))}s</div>
-            <div class="meta-item" style="grid-column:1/3"><span class="meta-label">工作目录</span><span style="font-size:12px;word-break:break-all">${escapeHtml(data.workdir)}</span></div>
-            <div class="meta-item"><span class="meta-label">创建</span>${toLocal(data.createdAt)}</div>
-            <div class="meta-item"><span class="meta-label">开始</span>${toLocal(data.startedAt)}</div>
-            <div class="meta-item"><span class="meta-label">完成</span>${toLocal(data.completedAt)}</div>
-            <div class="meta-item"><span class="meta-label">输出行</span>${escapeHtml(String(data.outputLines))}</div>
-            ${data.error ? `<div class="meta-item" style="grid-column:1/3"><span class="meta-label">错误</span><span style="color:var(--danger)">${escapeHtml(data.error)}</span></div>` : ''}
-          </div>
           <div class="detail-tabs">
-            <button class="tab-btn active" onclick="switchTab('result',this)">审查结果</button>
+            <button class="tab-btn active" onclick="switchTab('result',this)">任务详情</button>
             <button class="tab-btn" onclick="switchTab('logs',this)">实时日志</button>
           </div>
-          <div class="detail-content" id="logContent">加载中...</div>
+          <div class="chat-container" id="chatContainer"><div class="chat-msg system"><div class="msg-bubble">加载中...</div></div></div>
         `;
 
         // 运行中的任务：启动耗时实时计时器
@@ -378,18 +1206,90 @@
       }
     }
 
+    /** CLI 品牌配置（图片头像 + 名称） */
+    const CLI_MAP = {
+      codex: { avatar: '<img src="/avatars/codex.svg"  alt="Codex"  width="32" height="32">', label: 'Codex' },
+      gemini: { avatar: '<img src="/avatars/gemini.svg" alt="Gemini" width="32" height="32">', label: 'Gemini' },
+      claude: { avatar: '<img src="/avatars/claude.svg" alt="Claude" width="32" height="32">', label: 'Claude' },
+    };
+
+    /** 角色配置（通用 fallback） */
+    const ROLE_MAP = {
+      assistant: { avatar: '🤖', label: 'AI' },
+      user: { avatar: '👤', label: '用户' },
+      system: { avatar: '⚙️', label: '系统' },
+    };
+
+    /** 当前选中任务的 CLI */
+    let selectedCli = null;
+
+    /**
+     * 渲染单条聊天气泡
+     * @param {'user'|'assistant'|'system'} role - 角色
+     * @param {string} content - 消息内容
+     * @param {string} [time] - 时间
+     * @param {string} [cli] - CLI 名称，覆盖默认头像/标签
+     */
+    function renderBubble(role, content, time, cli) {
+      const cliCfg = cli ? CLI_MAP[cli] : null;
+      const fallback = ROLE_MAP[role] || ROLE_MAP.system;
+      const avatar = (role === 'assistant' && cliCfg) ? cliCfg.avatar : fallback.avatar;
+      const label = (role === 'assistant' && cliCfg) ? cliCfg.label : fallback.label;
+      const timeHtml = time ? `<div class="msg-time">${escapeHtml(time)}</div>` : '';
+      return `
+        <div class="chat-msg ${role}">
+          <div class="msg-avatar">${avatar}</div>
+          <div>
+            <div class="msg-role">${label}</div>
+            <div class="msg-bubble">${escapeHtml(content)}</div>
+            ${timeHtml}
+          </div>
+        </div>
+      `;
+    }
+
     async function loadResult(id) {
       const res = await fetch(`${API}/tasks/${id}/result`);
       const data = await res.json();
-      const el = document.getElementById('logContent');
-      if (el) el.textContent = data.result || '(暂无结果)';
+      const el = document.getElementById('chatContainer');
+      if (!el) return;
+
+      /** 清空容器（移除"加载中..."等旧内容） */
+      el.innerHTML = '';
+
+      /** 先渲染结果 */
+      if (!data.result) {
+        el.insertAdjacentHTML('beforeend', renderBubble('system', '暂无结果'));
+      } else {
+        el.insertAdjacentHTML('beforeend', renderBubble('assistant', data.result, formatTime(new Date()), selectedCli));
+      }
+
+      /** 再加载思考记录（放在回答下方） */
+      resetThought();
+      try {
+        const thoughtRes = await fetch(`${API}/tasks/${id}/thought`);
+        const thoughtData = await thoughtRes.json();
+        if (thoughtData.thought && thoughtData.thought.content) {
+          renderSavedThought(thoughtData.thought);
+        } else if (selectedCli === 'codex') {
+          renderCodexThoughtHint();
+        }
+      } catch (_) { }
+
+      el.scrollTop = el.scrollHeight;
     }
 
     async function loadLogs(id) {
       const res = await fetch(`${API}/tasks/${id}/logs`);
       const data = await res.json();
-      const el = document.getElementById('logContent');
-      if (el) el.textContent = data.logs || '(暂无日志)';
+      const el = document.getElementById('chatContainer');
+      if (!el) return;
+      if (!data.logs) {
+        el.innerHTML = renderBubble('system', '暂无日志');
+        return;
+      }
+      el.innerHTML = renderBubble('system', data.logs);
+      el.scrollTop = el.scrollHeight;
     }
 
     function switchTab(tab, btn) {
@@ -399,9 +1299,13 @@
       else loadLogs(selectedId);
     }
 
-    async function cancelTask() {
+    async function cancelCurrent() {
       if (!selectedId) return;
-      await fetch(`${API}/compat/cancel/${selectedId}`);
+      if (selectedType === 'task') {
+        await fetch(`${API}/compat/cancel/${selectedId}`);
+      } else {
+        await fetch(`${API}/conversations/${selectedId}/cancel`, { method: 'POST' });
+      }
     }
 
     /** UTC 时间字符串 → 本地时间显示 */
@@ -411,7 +1315,7 @@
       const d = new Date(utcStr.replace(' ', 'T') + 'Z');
       if (isNaN(d)) return utcStr;
       const pad = n => String(n).padStart(2, '0');
-      return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
     }
 
     function escapeHtml(text) {
@@ -420,15 +1324,341 @@
       return div.innerHTML;
     }
 
-    // 定时刷新列表（补充 WebSocket 可能遗漏的）
+    // 定时刷新（tasks + conversations）
     setInterval(async () => {
       try {
-        const res = await fetch(`${API}/tasks`);
-        const data = await res.json();
-        tasks = data.tasks || [];
+        const [tRes, cRes] = await Promise.all([
+          fetch(`${API}/tasks`).then(r => r.json()),
+          fetch(`${API}/conversations`).then(r => r.json()),
+        ]);
+        tasks = tRes.tasks || [];
+        conversations = cRes.conversations || [];
         renderAll();
-      } catch (e) {}
+      } catch (e) { }
     }, 10000);
+
+    // 初始加载 conversations
+    fetch(`${API}/conversations`).then(r => r.json()).then(data => {
+      conversations = data.conversations || [];
+      renderAll();
+    }).catch(() => { });
+
+    // ============ 会话详情加载 ============
+
+    /** 加载讨论/群聊详情 */
+    async function loadConversationDetail(id) {
+      try {
+        if (elapsedTimer) { clearInterval(elapsedTimer); elapsedTimer = null; }
+
+        const res = await fetch(`${API}/conversations/${id}`);
+        const data = await res.json();
+        const conv = data.conversation;
+        const participants = data.participants || [];
+        const messages = data.messages || [];
+
+        const panel = document.getElementById('detailPanel');
+        const isActive = ['idle', 'running'].includes(conv.status);
+        document.getElementById('cancelBtn').style.display = isActive ? 'block' : 'none';
+
+        // Meta
+        const metaEl = document.getElementById('detailMeta');
+        const typeLabel = conv.type === 'discussion' ? '💬 讨论' : '👥 群聊';
+        const participantTags = participants.map(p =>
+          `<span class="participant-tag ${escapeHtml(p.status)}" id="participant-${escapeHtml(p.cli)}">${escapeHtml(p.cli)}: ${escapeHtml(p.status)}</span>`
+        ).join('');
+        metaEl.innerHTML = `
+          <span class="meta-tag">${typeLabel}</span>
+          <span class="badge ${escapeHtml(conv.status)}">${statusLabel(conv.status)}</span>
+          ${participantTags}
+        `;
+
+        // 渲柨群聊风格消息
+        panel.innerHTML = `<div class="chat-container" id="chatContainer"></div>`;
+        const container = document.getElementById('chatContainer');
+
+        if (messages.length === 0) {
+          container.insertAdjacentHTML('beforeend', renderBubble('system', '等待各 CLI 回答中...'));
+        } else {
+          for (const msg of messages) {
+            const cliBorderClass = msg.cli !== 'user' ? ` cli-border-${msg.cli}` : '';
+            const html = renderBubble(msg.role, msg.content, formatTime(new Date(msg.created_at + 'Z')), msg.cli !== 'user' ? msg.cli : undefined);
+            container.insertAdjacentHTML('beforeend', html);
+            // 给最后插入的元素加 CLI-specific 边框
+            if (cliBorderClass) {
+              const lastMsg = container.lastElementChild;
+              if (lastMsg) lastMsg.classList.add(`cli-border-${msg.cli}`);
+            }
+            // assistant 消息加 trace 按钮（思考/输入）
+            if (msg.role === 'assistant' && (msg.has_thinking || msg.has_prompt_input)) {
+              const lastMsg = container.lastElementChild;
+              if (lastMsg) {
+                const bubbleDiv = lastMsg.querySelector('.msg-bubble');
+                if (bubbleDiv) {
+                  let btns = '<div class="trace-actions">';
+                  if (msg.has_thinking) {
+                    btns += `<button class="trace-btn" onclick="showTrace('${msg.id}','thinking','${escapeHtml(msg.cli)}')">🧠 思考</button>`;
+                  }
+                  if (msg.has_prompt_input) {
+                    btns += `<button class="trace-btn" onclick="showTrace('${msg.id}','prompt_input','${escapeHtml(msg.cli)}')">📥 输入</button>`;
+                  }
+                  btns += '</div>';
+                  bubbleDiv.insertAdjacentHTML('afterend', btns);
+                }
+              }
+            }
+          }
+        }
+
+        // 显示正在回答的 CLI
+        if (isActive) {
+          const runningClis = participants.filter(p => p.status === 'running' || p.status === 'pending');
+          if (runningClis.length > 0) {
+            const names = runningClis.map(p => p.cli).join(', ');
+            container.insertAdjacentHTML('beforeend', renderBubble('system', `${names} 正在回答中...`));
+          }
+        }
+
+        // 显示汇总
+        if (conv.summary && conv.type === 'discussion') {
+          container.insertAdjacentHTML('beforeend', `
+            <div class="round-divider">── 最终总结 ──</div>
+          `);
+          container.insertAdjacentHTML('beforeend', renderBubble('system', conv.summary));
+        }
+
+        container.scrollTop = container.scrollHeight;
+      } catch (e) {
+        console.error('加载会话详情失败:', e);
+      }
+    }
+
+    // ============ 思考块 ============
+
+    /** 当前思考状态 */
+    let currentThought = { taskId: null, text: '', startTime: null, el: null, timer: null };
+
+    /** 重置思考状态 */
+    function resetThought() {
+      if (currentThought.timer) clearInterval(currentThought.timer);
+      currentThought = { taskId: null, text: '', startTime: null, el: null, timer: null };
+    }
+
+    /** 创建实时思考块 */
+    function createThoughtBlock() {
+      const container = document.getElementById('chatContainer');
+      if (!container) return;
+
+      currentThought.taskId = selectedId;
+      currentThought.startTime = Date.now();
+
+      const block = document.createElement('div');
+      block.className = 'thought-block';
+      block.id = 'thoughtBlock';
+      block.innerHTML = `
+        <div class="thought-header" onclick="toggleThought()">
+          <span class="thought-header-left thought-active">
+            <span>🧠</span>
+            <span id="thoughtLabel">思考中... 0s</span>
+          </span>
+          <span class="thought-header-right">
+            <span class="thought-toggle" id="thoughtToggle">▼</span>
+          </span>
+        </div>
+        <div class="thought-body" id="thoughtBody">
+          <div class="thought-content" id="thoughtContent"></div>
+        </div>
+      `;
+      container.prepend(block);
+      currentThought.el = block;
+
+      // 实时计时器
+      currentThought.timer = setInterval(() => {
+        const secs = Math.round((Date.now() - currentThought.startTime) / 1000);
+        const label = document.getElementById('thoughtLabel');
+        if (label) label.textContent = `思考中... ${secs}s`;
+      }, 1000);
+    }
+
+    /** 节流更新思考内容 */
+    let _thoughtThrottleTimer = null;
+    function throttledUpdateThought() {
+      if (_thoughtThrottleTimer) return;
+      _thoughtThrottleTimer = setTimeout(() => {
+        _thoughtThrottleTimer = null;
+        const el = document.getElementById('thoughtContent');
+        if (el) el.textContent = currentThought.text;
+      }, 100);
+    }
+
+    /** 折叠/展开思考块 */
+    function toggleThought() {
+      const body = document.getElementById('thoughtBody');
+      const toggle = document.getElementById('thoughtToggle');
+      if (!body) return;
+      body.classList.toggle('expanded');
+      if (toggle) toggle.classList.toggle('expanded');
+    }
+
+    /** 终结实时思考块（任务完成/中断时调用） */
+    function finalizeThoughtBlock(status, error) {
+      if (!currentThought.el) return;
+      if (currentThought.timer) { clearInterval(currentThought.timer); currentThought.timer = null; }
+
+      const secs = Math.round((Date.now() - currentThought.startTime) / 1000);
+      const label = document.getElementById('thoughtLabel');
+      const headerLeft = currentThought.el.querySelector('.thought-header-left');
+      if (headerLeft) headerLeft.classList.remove('thought-active');
+
+      if (status === 'interrupted' && error) {
+        if (label) label.textContent = `思考中断`;
+        const headerRight = currentThought.el.querySelector('.thought-header-right');
+        if (headerRight) {
+          const errBtn = document.createElement('span');
+          errBtn.className = 'thought-error-btn';
+          errBtn.innerHTML = `⚠️<span class="thought-error-tooltip">${escapeHtml(error)}</span>`;
+          headerRight.insertBefore(errBtn, headerRight.firstChild);
+        }
+      } else {
+        const time = formatTime(new Date(currentThought.startTime));
+        if (label) label.textContent = `思考于 ${time} · 耗时 ${secs}s · 点击查看`;
+      }
+    }
+
+    /** 渲染从 DB 恢复的思考记录 */
+    function renderSavedThought(thought) {
+      const container = document.getElementById('chatContainer');
+      if (!container) return;
+
+      let duration = thought.duration || 0;
+      let statusText = '';
+      let errorHtml = '';
+      let activeClass = '';
+
+      if (thought.status === 'active') {
+        statusText = `思考中... ${duration}s`;
+        activeClass = ' thought-active';
+      } else if (thought.status === 'interrupted') {
+        statusText = `思考中断`;
+        if (thought.error) {
+          errorHtml = `<span class="thought-error-btn">⚠️<span class="thought-error-tooltip">${escapeHtml(thought.error)}</span></span>`;
+        }
+      } else {
+        const time = thought.started_at ? formatTime(new Date(thought.started_at + 'Z')) : '';
+        statusText = time ? `思考于 ${time} · 耗时 ${duration}s · 点击查看` : `已思考 ${duration}s · 点击查看`;
+      }
+
+      const block = document.createElement('div');
+      block.className = 'thought-block';
+      block.id = 'thoughtBlock';
+      block.innerHTML = `
+        <div class="thought-header" onclick="toggleThought()">
+          <span class="thought-header-left${activeClass}">
+            <span>🧠</span>
+            <span id="thoughtLabel">${statusText}</span>
+          </span>
+          <span class="thought-header-right">
+            ${errorHtml}
+            <span class="thought-toggle" id="thoughtToggle">▼</span>
+          </span>
+        </div>
+        <div class="thought-body" id="thoughtBody">
+          <div class="thought-content" id="thoughtContent">${escapeHtml(thought.content)}</div>
+        </div>
+      `;
+      container.appendChild(block);
+
+      // active 状态：接续 JS 状态，使后续 thought chunk 不重建块
+      if (thought.status === 'active') {
+        const startedMs = thought.started_at ? new Date(thought.started_at + 'Z').getTime() : Date.now();
+        currentThought.taskId = selectedId;
+        currentThought.text = thought.content;
+        currentThought.startTime = startedMs;
+        currentThought.el = block;
+        currentThought.timer = setInterval(() => {
+          const secs = Math.round((Date.now() - startedMs) / 1000);
+          const label = document.getElementById('thoughtLabel');
+          if (label) label.textContent = `思考中... ${secs}s`;
+        }, 1000);
+      }
+    }
+
+    /** 渲染 Codex 不支持思考的提示 */
+    function renderCodexThoughtHint() {
+      const container = document.getElementById('chatContainer');
+      if (!container) return;
+      const hint = document.createElement('div');
+      hint.className = 'thought-hint';
+      hint.innerHTML = '🧠 <span>Codex 暂不支持思考过程输出（codex-acp 未转发 reasoning summary）</span>';
+      container.appendChild(hint);
+    }
+
+    /** 格式化时间为 HH:mm */
+    function formatTime(date) {
+      if (!date || isNaN(date)) return '';
+      const pad = n => String(n).padStart(2, '0');
+      return `${pad(date.getHours())}:${pad(date.getMinutes())}`;
+    }
+
+    // ============ Trace Modal ============
+
+    /**
+     * 显示消息追踪弹窗（思考过程 / 输入提示词）
+     * @param {string} messageId - conversation_messages.id
+     * @param {'thinking'|'prompt_input'} type - 查看类型
+     * @param {string} cli - CLI 名称
+     */
+    async function showTrace(messageId, type, cli) {
+      const overlay = document.getElementById('traceModalOverlay');
+      const titleEl = document.getElementById('traceModalTitle');
+      const bodyEl = document.getElementById('traceModalBody');
+
+      titleEl.textContent = type === 'thinking'
+        ? `${cli} 的思考过程`
+        : `${cli} 的输入提示词`;
+      bodyEl.innerHTML = '<pre>加载中...</pre>';
+      overlay.classList.add('visible');
+
+      try {
+        const convId = selectedId;
+        const res = await fetch(`${API}/conversations/${convId}/messages/${messageId}/trace`);
+        const trace = await res.json();
+        const content = type === 'thinking' ? trace.thinking : trace.prompt_input;
+        bodyEl.innerHTML = `<pre>${escapeHtml(content || '无内容')}</pre>`;
+      } catch (e) {
+        bodyEl.innerHTML = `<pre>加载失败: ${escapeHtml(e.message)}</pre>`;
+      }
+    }
+
+    /** 关闭追踪弹窗 */
+    function closeTraceModal() {
+      document.getElementById('traceModalOverlay').classList.remove('visible');
+    }
+
+    /** 复制追踪内容 */
+    function copyTraceContent() {
+      const pre = document.querySelector('#traceModalBody pre');
+      if (pre) {
+        navigator.clipboard.writeText(pre.textContent).then(() => {
+          const btn = document.querySelector('.trace-copy-btn');
+          if (btn) { btn.textContent = '✅ 已复制'; setTimeout(() => btn.textContent = '复制', 1500); }
+        });
+      }
+    }
   </script>
+
+  <!-- Trace Modal -->
+  <div class="trace-modal-overlay" id="traceModalOverlay" onclick="if(event.target===this)closeTraceModal()">
+    <div class="trace-modal">
+      <div class="trace-modal-header">
+        <h3 id="traceModalTitle"></h3>
+        <button class="trace-modal-close" onclick="closeTraceModal()">&times;</button>
+      </div>
+      <div class="trace-modal-body" id="traceModalBody"></div>
+      <div class="trace-modal-footer">
+        <button class="trace-copy-btn" onclick="copyTraceContent()">复制</button>
+      </div>
+    </div>
+  </div>
 </body>
+
 </html>
