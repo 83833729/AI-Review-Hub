@@ -5,7 +5,8 @@
   "promptDir": "C:/tmp/prompts",
   "allowedWorkdirs": [
     "C:/Users/Administrator/Desktop/v2-admin",
-    "C:/Users/Administrator/Desktop"
+    "C:/Users/Administrator/Desktop",
+    "C:/Users/Administrator/Desktop/AI Review Hub"
   ],
   "supportedClis": ["codex", "gemini", "claude"],
   "preferredModel": {

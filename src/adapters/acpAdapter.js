@@ -9,10 +9,26 @@ const { PermissionChecker } = require('../middleware/permission');
  * @type {Record<string, { cmd: string, args: string[] }>}
  */
 const CLI_ACP_COMMANDS = {
-  codex: { cmd: 'npx', args: ['@zed-industries/codex-acp@0.9.5'] },
+  codex: { cmd: 'npx', args: ['--prefer-offline', '@zed-industries/codex-acp@0.9.5'] },
   gemini: { cmd: 'gemini', args: ['--acp'] },
-  claude: { cmd: 'npx', args: ['@zed-industries/claude-agent-acp@latest'] },
+  claude: { cmd: 'npx', args: ['--prefer-offline', '@zed-industries/claude-agent-acp@latest'] },
 };
+
+/**
+ * ACP SDK 模块级单例缓存
+ * 避免每次 start() 都重复执行动态 import，首次加载后复用同一 Promise
+ * @type {Promise<any>|null}
+ */
+let _acpSDKCache = null;
+function getAcpSDK() {
+  if (!_acpSDKCache) {
+    _acpSDKCache = import('@agentclientprotocol/sdk').catch((err) => {
+      _acpSDKCache = null; // 失败时清空缓存，允许下次重试
+      throw err;
+    });
+  }
+  return _acpSDKCache;
+}
 
 /**
  * ACP 客户端处理器
@@ -152,6 +168,11 @@ class AcpAdapter extends EventEmitter {
      * sandbox 权限控制通过 PermissionChecker 在服务端实施，无需传给 CLI 子进程。
      */
 
+    // SDK 预加载：在 spawn 之前启动 SDK 加载，与进程启动并行
+    const sdkPromise = getAcpSDK();
+    // 兜底：若 spawn 先失败，避免 sdkPromise 成为未处理的 rejected Promise
+    sdkPromise.catch(() => { });
+
     this.process = spawn(finalCmd, finalArgs, {
       cwd: workdir || undefined,
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -174,8 +195,8 @@ class AcpAdapter extends EventEmitter {
       this.emit('close', code);
     });
 
-    // 动态导入 ESM SDK + 创建连接
-    const acp = await import('@agentclientprotocol/sdk');
+    // SDK 此时可能已加载完毕（与 spawn 并行）
+    const acp = await sdkPromise;
     const input = Writable.toWeb(this.process.stdin);
     const output = Readable.toWeb(this.process.stdout);
     const stream = acp.ndJsonStream(input, output);

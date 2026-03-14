@@ -25,6 +25,72 @@ const REGISTRY_FILE = '.airh-registry.json';
  */
 const SYMLINK_TYPE = process.platform === 'win32' ? 'junction' : undefined;
 
+// ─── 扫描与指纹 ────────────────────────────────────────────
+
+/**
+ * 递归遍历目录，返回所有文件的绝对路径
+ * @param {string} dir - 目录绝对路径
+ * @returns {string[]} 所有文件路径
+ */
+function walkDirSync(dir) {
+    const results = [];
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+            results.push(...walkDirSync(full));
+        } else if (entry.isFile()) {
+            results.push(full);
+        }
+    }
+    return results;
+}
+
+/**
+ * 扫描 skillsDir 并生成指纹（纯读取，无 IO 写操作）
+ *
+ * 指纹由所有有效技能目录下的文件清单（相对路径 + 大小 + 修改时间）
+ * 经排序后取 SHA-1 hash 前 12 位生成，任何文件变动都会导致指纹变化。
+ *
+ * @param {string} skillsDir - 外部技能目录绝对路径
+ * @returns {{ fingerprint: string, skills: Array<{ name: string, sourceDir: string }> }}
+ * @throws {Error} skillsDir 不存在或不是目录时抛出
+ */
+function scanSkills(skillsDir) {
+    const crypto = require('crypto');
+    const resolved = path.resolve(skillsDir);
+
+    if (!fs.existsSync(resolved) || !fs.statSync(resolved).isDirectory()) {
+        throw new Error(`skillsDir 无效: ${resolved}`);
+    }
+
+    const skills = [];
+    /** @type {Array<[string, number, number]>} [相对路径, 字节大小, 修改时间] */
+    const entries = [];
+
+    for (const dir of fs.readdirSync(resolved, { withFileTypes: true })) {
+        if (!dir.isDirectory()) continue;
+        const sourceDir = path.join(resolved, dir.name);
+        if (!fs.existsSync(path.join(sourceDir, 'SKILL.md'))) continue;
+
+        skills.push({ name: dir.name, sourceDir });
+
+        for (const file of walkDirSync(sourceDir)) {
+            const stat = fs.statSync(file);
+            entries.push([path.relative(resolved, file), stat.size, stat.mtimeMs]);
+        }
+    }
+
+    // 按相对路径排序确保顺序稳定
+    entries.sort((a, b) => a[0].localeCompare(b[0]));
+
+    const hash = crypto.createHash('sha1')
+        .update(JSON.stringify(entries))
+        .digest('hex')
+        .slice(0, 12);
+
+    return { fingerprint: `${resolved}|${hash}`, skills };
+}
+
 // ─── 注册表读写 ────────────────────────────────────────────
 
 /**
@@ -93,20 +159,20 @@ async function withFileLock(registryPath, fn) {
 // ─── 核心 API ──────────────────────────────────────────────
 
 /**
- * 为任务注入外部技能（方案 R：一级目录 + 注册表引用计数）
+ * 为任务/池项注入外部技能（一级目录 + 注册表引用计数）
  *
  * junction 直接创建在 `skillsRoot` 一级目录下，通过 `.airh-registry.json`
- * 维护引用计数。多任务共享同一 junction，最后一个任务清理时才 unlink。
+ * 维护引用计数。多调用方共享同一 junction，最后一个清理时才 unlink。
  *
  * @param {'codex'|'gemini'|'claude'} cli - 目标 CLI
  * @param {string} workdir - 工作目录绝对路径
  * @param {string} skillsDir - 外部技能目录绝对路径
- * @param {string} taskId - 任务 ID
- * @returns {Promise<{taskId: string, cli: string, workdir: string, injectedSkills: string[]}|null>}
+ * @param {string} ownerId - 调用方标识（taskId 或 pool-entry:connKey）
+ * @returns {Promise<{ownerId: string, cli: string, workdir: string, injectedSkills: string[]}|null>}
  *   注入句柄（用于 cleanupSkills），无技能注入时返回 null
  */
-async function setupSkills(cli, workdir, skillsDir, taskId) {
-    if (!skillsDir || !workdir || !taskId) return null;
+async function setupSkills(cli, workdir, skillsDir, ownerId) {
+    if (!skillsDir || !workdir || !ownerId) return null;
 
     // 校验 cli
     if (!CLI_SKILLS_DIR[cli]) {
@@ -150,7 +216,7 @@ async function setupSkills(cli, workdir, skillsDir, taskId) {
 
             // 冲突检测：目录已存在 + 不在注册表中 → 原生技能，跳过
             if (targetExists && !registry[skillName]) {
-                logger.warn(`[Skills] [${taskId}] 跳过: ${skillName} 已存在（原生技能）`);
+                logger.warn(`[Skills] [${ownerId}] 跳过: ${skillName} 已存在（原生技能）`);
                 continue;
             }
 
@@ -160,19 +226,19 @@ async function setupSkills(cli, workdir, skillsDir, taskId) {
                     fs.symlinkSync(sourceDir, targetPath, SYMLINK_TYPE);
                     registry[skillName] = {
                         source: sourceDir,
-                        refs: [taskId],
+                        refs: [ownerId],
                         pid: process.pid,
                     };
                     injected.push(skillName);
-                    logger.info(`[Skills] [${taskId}] Junction: ${skillName} → ${sourceDir}`);
+                    logger.info(`[Skills] [${ownerId}] Junction: ${skillName} → ${sourceDir}`);
                 } catch (e) {
-                    logger.warn(`[Skills] [${taskId}] Junction 创建失败: ${skillName}: ${e.message}`);
+                    logger.warn(`[Skills] [${ownerId}] Junction 创建失败: ${skillName}: ${e.message}`);
                 }
             } else {
                 // 修复#2：同名技能不同 source → 冲突，跳过并警告
                 const existingSource = path.resolve(registry[skillName].source);
                 if (existingSource !== path.resolve(sourceDir)) {
-                    logger.warn(`[Skills] [${taskId}] 跳过: ${skillName} source 冲突（已有: ${existingSource}，新: ${sourceDir}）`);
+                    logger.warn(`[Skills] [${ownerId}] 跳过: ${skillName} source 冲突（已有: ${existingSource}，新: ${sourceDir}）`);
                     continue;
                 }
 
@@ -182,7 +248,7 @@ async function setupSkills(cli, workdir, skillsDir, taskId) {
                     try {
                         const actual = fs.readlinkSync(targetPath);
                         if (path.resolve(actual) !== path.resolve(sourceDir)) {
-                            logger.warn(`[Skills] [${taskId}] junction ${skillName} 指向已变（期望: ${sourceDir}，实际: ${actual}），重建`);
+                            logger.warn(`[Skills] [${ownerId}] junction ${skillName} 指向已变（期望: ${sourceDir}，实际: ${actual}），重建`);
                             safeUnlink(targetPath);
                             fs.symlinkSync(sourceDir, targetPath, SYMLINK_TYPE);
                         }
@@ -191,18 +257,18 @@ async function setupSkills(cli, workdir, skillsDir, taskId) {
                     // 注册表有记录但磁盘无 junction：自愈重建
                     try {
                         fs.symlinkSync(sourceDir, targetPath, SYMLINK_TYPE);
-                        logger.info(`[Skills] [${taskId}] 自愈重建 junction: ${skillName} → ${sourceDir}`);
+                        logger.info(`[Skills] [${ownerId}] 自愈重建 junction: ${skillName} → ${sourceDir}`);
                     } catch (e) {
-                        logger.warn(`[Skills] [${taskId}] 自愈重建失败: ${skillName}: ${e.message}`);
+                        logger.warn(`[Skills] [${ownerId}] 自愈重建失败: ${skillName}: ${e.message}`);
                     }
                 }
 
                 // 追加引用
-                if (!registry[skillName].refs.includes(taskId)) {
-                    registry[skillName].refs.push(taskId);
+                if (!registry[skillName].refs.includes(ownerId)) {
+                    registry[skillName].refs.push(ownerId);
                 }
                 injected.push(skillName);
-                logger.debug(`[Skills] [${taskId}] 追加引用: ${skillName} (refs: ${registry[skillName].refs.length})`);
+                logger.debug(`[Skills] [${ownerId}] 追加引用: ${skillName} (refs: ${registry[skillName].refs.length})`);
             }
         }
 
@@ -211,16 +277,16 @@ async function setupSkills(cli, workdir, skillsDir, taskId) {
 
     if (injected.length === 0) return null;
 
-    logger.info(`[Skills] [${taskId}] 已注入 ${injected.length} 个技能到 ${skillsRoot}`);
-    return { taskId, cli, workdir: path.resolve(workdir), injectedSkills: injected };
+    logger.info(`[Skills] [${ownerId}] 已注入 ${injected.length} 个技能到 ${skillsRoot}`);
+    return { ownerId, cli, workdir: path.resolve(workdir), injectedSkills: injected };
 }
 
 /**
- * 清理单个任务的注入技能（引用计数递减，归零时 unlink junction）
+ * 清理调用方的注入技能（引用计数递减，归零时 unlink junction）
  *
  * 此函数是幂等的，重复调用不会报错。
- * @param {{taskId: string, cli: string, workdir: string}|string|null} handle
- *   - 对象形式: setupSkills 返回的句柄
+ * @param {{ownerId: string, cli: string, workdir: string}|string|null} handle
+ *   - 对象形式: setupSkills 返回的句柄（ownerId 可以是 taskId 或 pool-entry:connKey）
  *   - 字符串形式: 已废弃的 isolationDir 路径（向后兼容）
  *   - null: 无操作
  */
@@ -234,8 +300,10 @@ async function cleanupSkills(handle) {
         return;
     }
 
-    const { taskId, cli, workdir } = handle;
-    if (!taskId || !cli || !workdir) return;
+    const { ownerId, cli, workdir } = handle;
+    // 向后兼容：旧句柄可能用 taskId 字段
+    const effectiveId = ownerId || handle.taskId;
+    if (!effectiveId || !cli || !workdir) return;
 
     const skillsRoot = path.join(path.resolve(workdir), CLI_SKILLS_DIR[cli]);
     const registryPath = path.join(skillsRoot, REGISTRY_FILE);
@@ -247,8 +315,8 @@ async function cleanupSkills(handle) {
             const registry = readRegistry(registryPath);
 
             for (const [name, info] of Object.entries(registry)) {
-                // 移除当前 taskId 的引用
-                info.refs = info.refs.filter(id => id !== taskId);
+                // 移除当前 ownerId 的引用
+                info.refs = info.refs.filter(id => id !== effectiveId);
 
                 if (info.refs.length === 0) {
                     // 修复#4：先 unlink，确认成功后再删注册表条目
@@ -256,9 +324,9 @@ async function cleanupSkills(handle) {
                     const unlinkOk = _safeUnlinkVerified(junctionPath);
                     if (unlinkOk) {
                         delete registry[name];
-                        logger.info(`[Skills] [${taskId}] 清理 junction: ${name}`);
+                        logger.info(`[Skills] [${effectiveId}] 清理 junction: ${name}`);
                     } else {
-                        logger.warn(`[Skills] [${taskId}] junction 删除失败，保留注册表: ${name}`);
+                        logger.warn(`[Skills] [${effectiveId}] junction 删除失败，保留注册表: ${name}`);
                     }
                 }
             }
@@ -272,7 +340,7 @@ async function cleanupSkills(handle) {
             }
         });
     } catch (e) {
-        logger.warn(`[Skills] [${taskId}] 清理失败: ${e.message}`);
+        logger.warn(`[Skills] [${effectiveId}] 清理失败: ${e.message}`);
     }
 }
 
@@ -281,15 +349,15 @@ async function cleanupSkills(handle) {
  *
  * 检查逻辑：
  * 1. 读取每个 CLI skills 目录下的 `.airh-registry.json`
- * 2. 对每个注册条目，检查 `refs` 中的 taskId 是否仍存活
+ * 2. 对每个注册条目，检查 `refs` 中的 ownerId 是否仍存活
  * 3. 检查 `pid` 是否仍存活
  * 4. 如果 refs 全部失效且 pid 已死 → unlink junction + 移除注册表条目
  * 5. 自愈：注册表有记录但磁盘无目录 → 删注册表条目
  *
  * @param {string[]} workdirs - 需要扫描的工作目录列表
- * @param {(taskId: string) => boolean} [isTaskAlive] - 判断 taskId 是否仍存活的回调
+ * @param {(ownerId: string) => boolean} [isOwnerAlive] - 判断 ownerId 是否仍存活的回调
  */
-async function gcOrphanedSkills(workdirs, isTaskAlive) {
+async function gcOrphanedSkills(workdirs, isOwnerAlive) {
     let cleaned = 0;
 
     for (const workdir of workdirs) {
@@ -320,10 +388,10 @@ async function gcOrphanedSkills(workdirs, isTaskAlive) {
                             continue;
                         }
 
-                        // 修复#3：过滤死亡 taskId 后标记 modified，确保持久化
-                        if (isTaskAlive) {
+                        // 过滤死亡 ownerId 后标记 modified，确保持久化
+                        if (isOwnerAlive) {
                             const before = info.refs.length;
-                            info.refs = info.refs.filter(id => isTaskAlive(id));
+                            info.refs = info.refs.filter(id => isOwnerAlive(id));
                             if (info.refs.length !== before) modified = true;
                         }
 
@@ -448,4 +516,4 @@ function _legacyGc(skillsRoot) {
     }
 }
 
-module.exports = { setupSkills, cleanupSkills, gcOrphanedSkills, ISOLATION_PREFIX };
+module.exports = { setupSkills, cleanupSkills, gcOrphanedSkills, scanSkills, ISOLATION_PREFIX };
